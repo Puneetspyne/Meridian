@@ -9,3 +9,4 @@ DerivedData/
 .DS_Store
 docs/snapshots/*.png
 !docs/*.png
+.claude-session-cache.md
