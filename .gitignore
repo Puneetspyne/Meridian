@@ -1,0 +1,11 @@
+.build/
+build/
+dist/
+*.dmg
+*.xcodeproj
+*.xcworkspace
+.swiftpm/
+DerivedData/
+.DS_Store
+docs/snapshots/*.png
+!docs/*.png
