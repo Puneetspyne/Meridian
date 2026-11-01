@@ -9,11 +9,21 @@ struct AboutPane: View {
         return "Version \(short)"
     }
 
+    /// The app icon from a real bundle; outside one (swift run) the system would show a generic folder, so
+    /// the menu bar glyph stands in.
+    @ViewBuilder private var icon: some View {
+        if Bundle.main.bundleURL.pathExtension == "app" {
+            Image(nsImage: NSApp.applicationIconImage).resizable()
+        } else {
+            Image(nsImage: StatusItemController.glyph).renderingMode(.template).resizable().scaledToFit()
+                .padding(8).foregroundStyle(.primary)
+        }
+    }
+
     var body: some View {
         VStack(spacing: 10) {
             Spacer()
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
+            icon
                 .frame(width: 84, height: 84)
                 .accessibilityHidden(true)
             Text("Meridian").font(.title.weight(.semibold))

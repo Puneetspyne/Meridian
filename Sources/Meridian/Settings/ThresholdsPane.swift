@@ -14,17 +14,17 @@ struct ThresholdsPane: View {
                             range: 0.5...1, step: 0.05) { Format.percent($0) }
                 ValueSlider(title: "For at least", value: $model.settings.thresholds.cpuSustainedSeconds,
                             range: 10...300, step: 10) { "\(Int($0)) s" }
-                ValueSlider(title: "Warn at", value: $model.settings.thresholds.cpuTempWarningC,
+                ValueSlider(title: "Temperature warning", value: $model.settings.thresholds.cpuTempWarningC,
                             range: 70...105, step: 1) { Format.temperatureWithUnit($0, unit: unit) }
-                ValueSlider(title: "Critical at", value: $model.settings.thresholds.cpuTempCriticalC,
+                ValueSlider(title: "Temperature critical", value: $model.settings.thresholds.cpuTempCriticalC,
                             range: 80...115, step: 1) { Format.temperatureWithUnit($0, unit: unit) }
                 Picker("Warn when the system reports", selection: $model.settings.thresholds.thermalPressureWarning) {
                     Text("Fair").tag(ThermalPressure.fair)
                     Text("Serious").tag(ThermalPressure.serious)
                     Text("Critical").tag(ThermalPressure.critical)
                 }
-                ValueSlider(title: "Fans warn above", value: $model.settings.thresholds.fanWarningFraction,
-                            range: 0.5...1, step: 0.05) { Format.percent($0) + " of max" }
+                ValueSlider(title: "Fan speed warning", value: $model.settings.thresholds.fanWarningFraction,
+                            range: 0.5...1, step: 0.05) { Format.percent($0) }
             }
 
             Section("Memory") {

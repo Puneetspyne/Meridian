@@ -117,7 +117,12 @@ final class CornerPanelController {
     /// The visible frame normally, the full frame when a full-screen app hides the menu bar.
     private func layoutArea() -> CGRect {
         guard let screen else { return .zero }
-        return fullScreenCovering ? screen.frame : screen.visibleFrame
+        var area = fullScreenCovering ? screen.frame : screen.visibleFrame
+        // On a notched display the top corners always sit below the notch band, even when the menu bar
+        // is hidden, so they can never meet the wings.
+        let top = screen.frame.maxY - screen.safeAreaInsets.top
+        if area.maxY > top { area.size.height -= area.maxY - top }
+        return area
     }
 
     private func targetFrame() -> CGRect {
@@ -193,6 +198,10 @@ final class CornerPanelController {
     // MARK: Environment (screens, Spaces, full screen)
 
     private func installEnvironmentObservers() {
+        observers.append(NotificationCenter.default.addObserver(
+            forName: Notification.Name("meridian.openCard"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.openCard() }
+        })
         observers.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.environmentChanged() }

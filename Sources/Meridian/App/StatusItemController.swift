@@ -16,6 +16,7 @@ final class StatusItemController: NSObject {
     private var lastSymbol = ""
 
     private static let toggleCard = Notification.Name("meridian.toggleCard")
+    private static let openCardName = Notification.Name("meridian.openCard")
 
     init(model: AppModel, openSettings: @escaping () -> Void) {
         self.model = model
@@ -23,6 +24,17 @@ final class StatusItemController: NSObject {
         super.init()
         rebuild()
         track()
+        showOnFirstLaunch()
+    }
+
+    /// First launch only: open the card once so the user sees where Meridian lives.
+    private func showOnFirstLaunch() {
+        guard !model.settings.hasCompletedOnboarding else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self, !self.model.settings.hasCompletedOnboarding else { return }
+            self.model.settings.hasCompletedOnboarding = true
+            NotificationCenter.default.post(name: Self.openCardName, object: self)
+        }
     }
 
     deinit {
@@ -216,7 +228,7 @@ final class StatusItemController: NSObject {
         return mi
     }
 
-    @objc private func openCard() { NotificationCenter.default.post(name: Self.toggleCard, object: self) }
+    @objc private func openCard() { NotificationCenter.default.post(name: Self.openCardName, object: self) }
     @objc private func settings() { openSettings() }
 
     @objc private func togglePause() {

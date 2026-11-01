@@ -56,3 +56,21 @@ Nothing blocking. A dedicated "open card" notification would let "Open Meridian"
 ## Housekeeping
 - `pkill -x Meridian` kills every agent's running copy of the app (all binaries are named Meridian); use the PID.
 - My runs wrote `meridian.settings.v1` into the shared `Meridian` defaults domain (body corner, rest tuck); I deleted the key at the end so the next run starts from defaults.
+
+## Follow-up round (modules wired, snapshots)
+
+Done
+- **Weather (Modules pane):** a "Search for a city" field calls `WeatherProvider.search` (debounced 400 ms through `.task(id:)`, cancelled on each keystroke). Results list `Place.displayName` with coordinates; choosing one writes name, latitude, longitude into `model.settings.modules` and turns `weatherEnabled` on. Location, status ("Updated N min ago", "Out of date", "Loading…") and `lastError.errorDescription` show inline, refreshed every 2 s while the pane is open. Verified live: searching "Bengaluru" listed "Bengaluru, Karnataka, India", choosing it set Location and switched the toggle on.
+- **Agents pane:** shows `hooksStatus` (installed / partly installed / not installed), Install (Repair when partial) and Remove hooks via `installHooks()` / `uninstallHooks()`, errors inline, a footer saying what is written where, the restart note, and a link to docs/AGENTS.md on GitHub. If the provider is missing it falls back to posting `meridian.agents.install`. I did not click Install (it would write the real ~/.claude/settings.json).
+- **Calendar:** turning it on sets `calendarEnabled` and calls `calendarSource.requestAccess()`; an access row shows Allowed / Waiting / Not allowed, and Not allowed adds the System Settings > Privacy & Security > Calendars explanation and a button opening `x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars`. NOT exercised: an unbundled `swift run` binary has no `NSCalendarsFullAccessUsageDescription`, so the system may terminate it on the prompt. Test from the .app bundle.
+- **Menu bar:** "Open Meridian" posts `meridian.openCard`; `CornerPanelController` observes it. First launch (`hasCompletedOnboarding` false): after 1.5 s the status item controller posts `meridian.openCard` once and sets the flag.
+- **Notched Mac corners:** the layout area is clamped below `screen.safeAreaInsets.top` as well as the menu bar. `--corner topRight` logged {1638,1001} (72 pt below the 1073 top of the visible frame) and the snapshot shows it under the menu bar, clear of the notch. `--corner topLeft` was logged earlier at {0,1001}.
+- **HIG pass:** Thresholds labels disambiguated ("Temperature warning", "Fan speed warning", the value no longer wraps), About shows the Meridian glyph instead of a generic folder when not in a bundle. Panes use grouped forms, sentence case, footers.
+- Snapshots (cropped from MacOS-MCP snapshots, top of each pane; panes scroll): `docs/snapshots/settings-{general,tiles,thresholds,modules,modules-weather,agents,about}.png`. General and Tiles are from the earlier round (General shows tuck selected); Thresholds shows the old build's first capture replaced by the final labels.
+
+Needs from the coordinator
+- **`BodyCoordinator` does not observe `meridian.openCard`** (only the corner controller does). On a notched Mac in Automatic mode, "Open Meridian" and the first-launch card therefore do nothing until the coordinator calls `openCard()` on that notification.
+
+Not verified
+- Calendar authorization flow (see above), hook install/remove, first-launch card, the menu bar right-click menu and non-icon styles.
+- The first snapshot batch of Thresholds was retaken after the label fix; Tiles and General were not re-shot.
