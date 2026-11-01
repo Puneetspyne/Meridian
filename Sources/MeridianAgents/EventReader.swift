@@ -38,7 +38,8 @@ public final class EventReader {
             offset += UInt64(complete.count)
             var events: [AgentEvent] = []
             for raw in complete.split(separator: 0x0A, omittingEmptySubsequences: true) {
-                guard let line = String(data: raw, encoding: .utf8), let e = AgentEvent.parse(line: line) else {
+                // Lenient decode: a multi-byte character cut by the script's truncation must not drop the whole event.
+                guard let e = AgentEvent.parse(line: String(decoding: raw, as: UTF8.self)) else {
                     malformedLineCount += 1
                     continue
                 }

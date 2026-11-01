@@ -60,7 +60,8 @@ public final class HIDTemperatureSampler: @unchecked Sendable {
             guard let event = api.copyEvent(service.pointer, Self.kIOHIDEventTypeTemperature, 0, 0) else { continue }
             let value = api.getFloat(event, Int32(Self.kIOHIDEventTypeTemperature << 16))
             Unmanaged<AnyObject>.fromOpaque(event).release()
-            if value > 0 && value <= 130 && value.isFinite { out.append((service.name, value)) }
+            // "tcal" is a factory calibration constant, not a temperature, so it is left out.
+            if value > 0 && value <= 130 && value.isFinite && !service.name.hasSuffix("tcal") { out.append((service.name, value)) }
         }
         return out
     }
@@ -91,7 +92,9 @@ public final class HIDTemperatureSampler: @unchecked Sendable {
             let n = seen[raw.name, default: 0]
             seen[raw.name] = n + 1
             let id = n == 0 ? "hid:\(raw.name)" : "hid:\(raw.name)#\(n)"
-            return TemperatureReading(id: id, name: SensorCatalog.friendlyName(forHIDName: raw.name),
+            let friendly = SensorCatalog.friendlyName(forHIDName: raw.name)
+            // Several sensors can share one product name (the gas gauge reports six); number them so labels stay unique.
+            return TemperatureReading(id: id, name: n == 0 ? friendly : "\(friendly) \(n + 1)",
                                       celsius: raw.celsius, group: SensorCatalog.group(forSensorName: raw.name))
         }
     }

@@ -35,7 +35,10 @@ final class PowerSampler {
     }
 
     private static func resolve() -> API? {
-        guard let handle = dlopen("/System/Library/PrivateFrameworks/IOReport.framework/IOReport", RTLD_NOW) else { return nil }
+        // macOS 26 ships IOReport only as /usr/lib/libIOReport.dylib (in the dyld cache); the old private-framework
+        // path no longer exists there. Try the framework first for older systems.
+        let paths = ["/System/Library/PrivateFrameworks/IOReport.framework/IOReport", "/usr/lib/libIOReport.dylib"]
+        guard let handle = paths.lazy.compactMap({ dlopen($0, RTLD_NOW) }).first else { return nil }
         func sym<T>(_ name: String, as: T.Type) -> T? {
             guard let p = dlsym(handle, name) else { return nil }
             return unsafeBitCast(p, to: T.self)
@@ -73,8 +76,9 @@ final class PowerSampler {
         var cpu = 0.0, gpu = 0.0, ane = 0.0, clusterCPU = 0.0
         var sawCPUTotal = false, advanced = false
 
-        let channels = (delta as NSDictionary)["IOReportChannels"] as? [CFDictionary] ?? []
-        for channel in channels {
+        let channels = (delta as NSDictionary)["IOReportChannels"] as? NSArray ?? []
+        for case let entry as NSDictionary in channels {
+            let channel = entry as CFDictionary
             guard let name = api.channelName(channel)?.takeUnretainedValue() as String? else { continue }
             let raw = api.integerValue(channel, 0)
             guard raw >= 0 else { continue }

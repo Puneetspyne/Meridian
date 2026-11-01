@@ -25,14 +25,14 @@ Other pieces: `HookScript`, `HooksInstaller`, `EventReader`, `SessionTracker`, `
 
 - Hook command is the script path alone (single-quoted only when it contains spaces, which the real path does). The script reads the event name from `hook_event_name` in the payload with parameter expansion.
 - Extra events beyond the brief: PostToolUseFailure, ElicitationResult, StopFailure (treated as done; this is what the CLI emits on an API/auth failure), per the current hooks docs. Notification also matches `notification_type` in permission_prompt, idle_prompt, elicitation_dialog, elicitation_url_dialog, agent_needs_input.
-- Oversize payloads (over 20,000 chars) are replaced by a stub with session_id, cwd, event, tool_name.
+- Privacy: the script stores identifier fields only. Payload keys written (when present): hook_event_name, session_id, cwd, tool_name, notification_type, stop_hook_active (bool), and for Notification events only `message` cut to 200 characters. Prompt text, tool inputs and responses, assistant replies and transcript path/contents are never written. Pure sh: parameter expansion for extraction (escape-aware for `\"` inside values), `printf '%.200s'` plus a small guard so a cut never leaves a dangling `\` or partial `\uXXXX` (which would make the line invalid JSON). No awk/sed. Assumes Claude's compact JSON (`"key":"value"`), which is what the CLI emits. The first occurrence of a key wins; common fields come first in the payload. EventReader decodes leniently so a multi-byte character cut by `printf` cannot drop an event.
 - No DispatchSource watcher: 1 s Timer (tolerance 0.2) is enough.
 - idle_prompt makes a finished session flip from done to needs you (per the brief's "waiting for your input" rule).
 - Uninstall leaves the script and log on disk on purpose.
 
 ## Verified
 
-- `./scripts/test.sh --scratch-path .build/agents --filter MeridianAgentsTests`: 18 tests, 5 suites, all pass (hook script run under /bin/sh including multi-line/empty/oversize/unwritable log; installer merge, idempotency, uninstall, partial, invalid JSON; tracker transitions, staleness, done expiry, dismiss; reader offsets, partial lines, truncation, rotation; signal mapping; Codex scan; provider end to end with a temp settings file).
+- `./scripts/test.sh --scratch-path .build/agents --filter MeridianAgentsTests`: 19 tests, 5 suites, all pass (hook script run under /bin/sh including multi-line/empty/unwritable log, a leak test (prompt, tool_input, tool_response, transcript path, assistant reply absent; exact key sets per event), and message truncation at 200 incl. escaped quotes, cut mid-escape, mid-\\u escape and non-ASCII; installer merge, idempotency, uninstall, partial, invalid JSON; tracker transitions, staleness, done expiry, dismiss; reader offsets, partial lines, truncation, rotation; signal mapping; Codex scan; provider end to end with a temp settings file).
 - `swift build --scratch-path .build/agents --target MeridianAgents` clean. A full-package build was interrupted once by another agent editing Sources/Meridian during the build; not related to this module.
 - Real CLI check, temp settings file only (`claude -p "say hi" --settings <temp>`, real ~/.claude untouched): hooks fired and the log received
   `UserPromptSubmit`, `StopFailure`, `SessionEnd` lines for one session id (tracker parsed them; SessionEnd removed the session).
@@ -41,5 +41,5 @@ Other pieces: `HookScript`, `HooksInstaller`, `EventReader`, `SessionTracker`, `
 
 ## Notes for the orchestrator
 
-- The log stores the full hook payload, which includes the user's prompt text (seen in the UserPromptSubmit line). It is documented in docs/AGENTS.md; if you want less, the script could keep only identifier fields.
+- Privacy change applied (identifier fields only); docs/AGENTS.md states exactly what is stored.
 - Hooks load at session start; running sessions need a restart after install.

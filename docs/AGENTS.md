@@ -15,7 +15,7 @@ signal in the notch or corner, plus working and done states. Opt-in, off by defa
 | Path | What |
 | --- | --- |
 | `~/Library/Application Support/Meridian/hooks/claude-hook.sh` | The hook script (mode 755). Uses only sh builtins and `date`. Prints nothing, always exits 0. |
-| `~/Library/Application Support/Meridian/claude-events.jsonl` | One line per event: `{"ts", "event", "payload"}`. Rotated to `claude-events.jsonl.1` above 5 MB. |
+| `~/Library/Application Support/Meridian/claude-events.jsonl` | One line per event: `{"ts", "event", "payload"}` with identifier fields only (see Privacy). Rotated to `claude-events.jsonl.1` above 5 MB. |
 | `~/.claude/settings.json` | One hook group per event below, each `{"hooks":[{"type":"command","command":"<script path>","timeout":5}]}`. Everything else is preserved. Keys are sorted and the file is pretty-printed, so the first install may reorder keys. |
 | `~/.claude/settings.json.meridian-backup` | Copy of the file as it was before the latest change. |
 | `~/Library/Application Support/Meridian/agent-names.json` | Optional, you create it: `{"<session id or cwd or folder name>": "Title"}`. |
@@ -43,9 +43,14 @@ If `~/.codex/sessions` exists, a rollout file modified in the last 30 s (today o
 ## Privacy
 
 - The log lives only on your disk. Meridian makes no network calls for this.
-- The log contains the hook payload Claude Code sends: session id, working folder, transcript path, tool name and
-  tool input, and **your prompt text** for UserPromptSubmit. Payloads over 20,000 characters are reduced to
-  identifiers. Meridian itself only reads session id, folder, event name, tool name and notification message.
+- The hook script stores identifier fields only. Per event line: `ts` (epoch seconds), `event`, and a payload holding
+  `hook_event_name`, `session_id`, `cwd`, `tool_name`, `notification_type`, `stop_hook_active` (each only when the
+  event has it) and, for Notification events only, `message` cut to 200 characters (it is the "needs your
+  permission to use Bash" text that becomes the card detail).
+- Never stored: prompt text, tool inputs, tool responses, the assistant's replies, the transcript path or any
+  transcript contents, permission mode, tool use ids. The script extracts the fields above from Claude's compact
+  JSON with shell parameter expansion and writes nothing else.
+- `cwd` is your project folder path, which Meridian shows as the session name.
 - Delete the log any time; it is recreated empty.
 
 ## Remove it

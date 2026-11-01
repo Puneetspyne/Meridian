@@ -111,8 +111,8 @@ final class AppModel {
         put(.diskRead, s.bootDisk?.readBytesPerSec)
         put(.diskWrite, s.bootDisk?.writeBytesPerSec)
         put(.battery, s.battery?.level)
-        put(.cpuTemp, s.thermal?.cpuCelsius)
-        put(.gpuTemp, s.thermal?.gpuCelsius)
+        put(.cpuTemp, s.thermal?.hottest(in: .cpu)?.celsius)
+        put(.gpuTemp, s.thermal?.hottest(in: .gpu)?.celsius)
         put(.fan, s.thermal?.fans.first?.rpm)
         put(.power, s.power?.totalWatts)
     }

@@ -6,6 +6,8 @@ import MeridianKit
 public final class SMCSampler: @unchecked Sendable {
     public let connection: SMCConnection?
     private var temperatureKeys: [String]?
+    private var activeKeys: [String] = []
+    private var passes = 0
     private var fanCount: Int?
     private let lock = NSLock()
 
@@ -20,17 +22,23 @@ public final class SMCSampler: @unchecked Sendable {
         return keys
     }
 
+    /// Each SMC read costs a round trip to the SMC firmware (about a quarter of a millisecond on M2), and roughly
+    /// a third of the "T" keys never yield a usable temperature. A full pass finds the live ones; the following
+    /// samples read only those, and a full pass repeats every few minutes in case a sensor wakes up.
     public func temperatures() -> [TemperatureReading] {
         lock.lock(); defer { lock.unlock() }
         guard let connection else { return [] }
+        let fullPass = passes % 120 == 0
+        passes += 1
         var readings: [TemperatureReading] = []
-        for key in loadTemperatureKeys() {
+        for key in fullPass ? loadTemperatureKeys() : activeKeys {
             guard let raw = connection.read(key), let c = raw.value, c > 0, c <= 130 else { continue }
             // Only temperature-shaped types: a "T" key holding something else must not show as degrees.
             guard ["flt", "sp78", "sp87", "sp96", "spa5", "spb4", "sp69", "fpe2"].contains(raw.type.trimmingCharacters(in: .whitespaces)) else { continue }
             readings.append(TemperatureReading(id: key, name: SensorCatalog.name(forSMCKey: key), celsius: c,
                                                group: SensorCatalog.group(forSMCKey: key)))
         }
+        if fullPass { activeKeys = readings.map(\.id) }
         return readings
     }
 

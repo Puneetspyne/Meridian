@@ -24,8 +24,11 @@ public enum SensorCatalog {
             let digits = name.dropFirst(prefix.count).filter(\.isNumber)
             return digits.isEmpty ? nil : String(digits)
         }
+        // M2-generation chips expose two PMUs ("PMU" and "PMU2"), each with numbered die and device sensors.
         if let n = number(after: "PMU tdie") { return "SoC die \(n)" }
         if let n = number(after: "PMU tdev") { return "SoC device \(n)" }
+        if let n = number(after: "PMU2 tdie") { return "SoC die \(n) (PMU2)" }
+        if let n = number(after: "PMU2 tdev") { return "SoC device \(n) (PMU2)" }
         if let n = number(after: "pACC MTR Temp Sensor") { return "Performance core \(n)" }
         if let n = number(after: "eACC MTR Temp Sensor") { return "Efficiency core \(n)" }
         if let n = number(after: "GPU MTR Temp Sensor") { return "GPU \(n)" }
@@ -41,7 +44,7 @@ public enum SensorCatalog {
     public static func group(forSMCKey key: String) -> SensorGroup {
         let p = String(key.prefix(2))
         switch p {
-        case "Tp", "TC", "Te", "Tf": return .cpu
+        case "Tp", "TC", "Te": return .cpu
         case "Tg", "TG": return .gpu
         case "Tm", "TM": return .memory
         case "TB": return .battery
@@ -52,10 +55,19 @@ public enum SensorCatalog {
 
     /// Friendly name for well-known keys; otherwise a descriptive fallback for known prefixes; otherwise the raw key.
     public static func name(forSMCKey key: String) -> String {
-        if let known = wellKnown[key] { return known }
+        name(forSMCKey: key, appleSilicon: isAppleSilicon)
+    }
+
+    static let isAppleSilicon = (Sysctl.int32("hw.optional.arm64") ?? 0) == 1
+
+    /// Intel temperature names ("Palm Rest", "Heatpipe 1") describe Intel sensor placement. The same keys exist
+    /// on Apple silicon with different meaning, so those names apply on Intel only.
+    static func name(forSMCKey key: String, appleSilicon: Bool) -> String {
+        if let known = common[key] { return known }
+        if !appleSilicon, let known = intelTemperatures[key] { return known }
         let suffix = String(key.dropFirst(2))
         switch String(key.prefix(2)) {
-        case "Tp", "Te", "Tf": return "CPU core (\(key))"
+        case "Tp", "Te": return "CPU core (\(key))"
         case "TC": return "CPU (\(key))"
         case "Tg", "TG": return "GPU (\(key))"
         case "Tm", "TM": return "Memory (\(key))"
@@ -69,8 +81,7 @@ public enum SensorCatalog {
     /// Well-known keys, written from public SMC key lists. Intel entries are long established; Apple silicon
     /// sensors vary per chip, so only the stable power and fan keys are named here. Contribute more with
     /// `meridianctl contribute`.
-    static let wellKnown: [String: String] = [
-        // Intel temperatures
+    static let intelTemperatures: [String: String] = [
         "TA0P": "Ambient", "TA1P": "Ambient 2", "Ta0P": "Airflow Left",
         "TC0D": "CPU Die", "TC0E": "CPU Die (E)", "TC0F": "CPU Die (F)", "TC0H": "CPU Heatsink", "TC0P": "CPU Proximity",
         "TC1C": "CPU Core 1", "TC2C": "CPU Core 2", "TC3C": "CPU Core 3", "TC4C": "CPU Core 4",
@@ -85,6 +96,9 @@ public enum SensorCatalog {
         "Th0H": "Heatpipe 1", "Th1H": "Heatpipe 2", "Th2H": "Heatpipe 3",
         "Ts0P": "Palm Rest", "Ts0S": "Palm Rest 2", "Ts1P": "Palm Rest 3", "Ts1S": "Palm Rest 4",
         "TL0P": "Display", "TW0P": "Wi-Fi", "TPCD": "PCH Die", "Tp0P": "Power Supply Proximity",
+    ]
+
+    static let common: [String: String] = [
         // Fans
         "FNum": "Fan Count", "F0Ac": "Fan 1 Speed", "F1Ac": "Fan 2 Speed",
         // Power and electrical

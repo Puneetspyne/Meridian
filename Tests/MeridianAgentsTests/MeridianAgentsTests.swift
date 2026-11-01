@@ -35,6 +35,13 @@ func ev(_ name: String, _ sid: String = "s1", at: TimeInterval = 0, cwd: String?
 // MARK: hook script
 
 @Suite struct HookScriptTests {
+    func payloadOf(_ dir: URL, line: Int = 0) throws -> [String: Any] {
+        let text = try String(contentsOf: dir.appendingPathComponent("claude-events.jsonl"), encoding: .utf8)
+        let lines = text.split(separator: "\n")
+        let obj = try #require(JSONSerialization.jsonObject(with: Data(lines[line].utf8)) as? [String: Any])
+        return try #require(obj["payload"] as? [String: Any])
+    }
+
     @Test func appendsLineSilentlyAndExitsZero() throws {
         let dir = tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
         let script = try HookScript.write(toDirectory: dir.appendingPathComponent("hooks"))
@@ -48,15 +55,64 @@ func ev(_ name: String, _ sid: String = "s1", at: TimeInterval = 0, cwd: String?
         let obj = try #require(JSONSerialization.jsonObject(with: Data(lines[0].utf8)) as? [String: Any])
         #expect(obj["event"] as? String == "Stop")
         #expect((obj["ts"] as? Double ?? 0) > 1_700_000_000)
-        #expect((obj["payload"] as? [String: Any])?["session_id"] as? String == "abc-1")
+        let pl = try #require(obj["payload"] as? [String: Any])
+        #expect(pl["session_id"] as? String == "abc-1" && pl["stop_hook_active"] as? Bool == false)
         let parsed = try #require(AgentEvent.parse(line: String(lines[0])))
         #expect(parsed.name == "Stop" && parsed.cwd == "/tmp/x y")
     }
 
-    @Test func joinsMultilineStdinAndHandlesEmptyInput() throws {
+    @Test func storesOnlyIdentifierFields() throws {
         let dir = tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
         let script = try HookScript.write(toDirectory: dir.appendingPathComponent("hooks"))
-        try runHook(script: script, stdin: "{\n \"session_id\": \"m1\",\n \"hook_event_name\": \"Notification\", \"message\": \"a \\\"q\\\" b\"\n}")
+        let secret = "SECRET-PROMPT-TEXT"
+        try runHook(script: script, stdin: #"{"session_id":"s9","transcript_path":"/Users/me/.claude/projects/x/s9.jsonl","cwd":"/r/app","permission_mode":"default","hook_event_name":"UserPromptSubmit","prompt":"\#(secret) \"cwd\":\"/evil\" tool_name"}"#)
+        try runHook(script: script, stdin: #"{"session_id":"s9","cwd":"/r/app","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"echo SECRET-CMD"},"tool_response":{"stdout":"SECRET-OUT"},"tool_use_id":"t1"}"#)
+        try runHook(script: script, stdin: #"{"session_id":"s9","cwd":"/r/app","hook_event_name":"Stop","stop_hook_active":true,"last_assistant_message":"SECRET-REPLY"}"#)
+        let text = try String(contentsOf: dir.appendingPathComponent("claude-events.jsonl"), encoding: .utf8)
+        for needle in [secret, "SECRET-CMD", "SECRET-OUT", "SECRET-REPLY", "transcript", "/evil", "prompt", "tool_input"] {
+            #expect(!text.contains(needle), "leaked \(needle)")
+        }
+        #expect(Set(try payloadOf(dir, line: 0).keys) == ["session_id", "hook_event_name", "cwd"])
+        let post = try payloadOf(dir, line: 1)
+        #expect(Set(post.keys) == ["session_id", "hook_event_name", "cwd", "tool_name"] && post["tool_name"] as? String == "Bash")
+        let stop = try payloadOf(dir, line: 2)
+        #expect(stop["stop_hook_active"] as? Bool == true && stop["message"] == nil)
+    }
+
+    @Test func notificationKeepsMessageTruncatedTo200() throws {
+        let dir = tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
+        let script = try HookScript.write(toDirectory: dir.appendingPathComponent("hooks"))
+        // 1: escaped quotes inside a short message
+        try runHook(script: script, stdin: #"{"session_id":"n1","cwd":"/p","hook_event_name":"Notification","message":"Claude needs your permission to use \"Bash\"","notification_type":"permission_prompt"}"#)
+        // 2: long message
+        let long = String(repeating: "a", count: 300)
+        try runHook(script: script, stdin: #"{"session_id":"n1","hook_event_name":"Notification","message":"\#(long)"}"#)
+        // 3: cut lands in the middle of a backslash escape and of a \u escape
+        let edge = String(repeating: "b", count: 199) + #"\n tail"#
+        try runHook(script: script, stdin: #"{"session_id":"n1","hook_event_name":"Notification","message":"\#(edge)"}"#)
+        let edgeU = String(repeating: "c", count: 197) + #"\u00e9 tail"#
+        try runHook(script: script, stdin: #"{"session_id":"n1","hook_event_name":"Notification","message":"\#(edgeU)"}"#)
+        // 5: non-ASCII near the cut
+        let uni = String(repeating: "é", count: 250)
+        try runHook(script: script, stdin: #"{"session_id":"n1","hook_event_name":"Notification","message":"\#(uni)"}"#)
+
+        let m1 = try payloadOf(dir, line: 0)
+        #expect(m1["message"] as? String == #"Claude needs your permission to use "Bash""#)
+        #expect(m1["notification_type"] as? String == "permission_prompt")
+        #expect((try payloadOf(dir, line: 1)["message"] as? String)?.count == 200)
+        #expect((try payloadOf(dir, line: 2)["message"] as? String)?.count == 199)   // parsed fine, dangling "\" dropped
+        #expect((try payloadOf(dir, line: 3)["message"] as? String)?.count == 197)   // partial \u escape dropped
+        let m5 = try #require(try payloadOf(dir, line: 4)["message"] as? String)
+        #expect(m5.count <= 200 && m5.hasPrefix("éé"))
+        // every stored line still parses as an AgentEvent
+        let lines = try String(contentsOf: dir.appendingPathComponent("claude-events.jsonl"), encoding: .utf8).split(separator: "\n")
+        #expect(lines.allSatisfy { AgentEvent.parse(line: String($0)) != nil })
+    }
+
+    @Test func handlesMultilineAndEmptyInput() throws {
+        let dir = tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
+        let script = try HookScript.write(toDirectory: dir.appendingPathComponent("hooks"))
+        try runHook(script: script, stdin: "{\n \"session_id\":\"m1\",\n \"hook_event_name\":\"Notification\", \"message\":\"a \\\"q\\\" b\"\n}")
         let r = try runHook(script: script, stdin: "")
         #expect(r.status == 0 && r.out.isEmpty)
         let lines = try String(contentsOf: dir.appendingPathComponent("claude-events.jsonl"), encoding: .utf8).split(separator: "\n")
@@ -64,17 +120,6 @@ func ev(_ name: String, _ sid: String = "s1", at: TimeInterval = 0, cwd: String?
         let e = try #require(AgentEvent.parse(line: String(lines[0])))
         #expect(e.sessionID == "m1" && e.message == #"a "q" b"#)
         #expect(AgentEvent.parse(line: String(lines[1])) == nil) // no session id: tolerated, dropped
-    }
-
-    @Test func oversizePayloadIsReplacedByStub() throws {
-        let dir = tempDir(); defer { try? FileManager.default.removeItem(at: dir) }
-        let script = try HookScript.write(toDirectory: dir.appendingPathComponent("hooks"))
-        let big = String(repeating: "x", count: 30_000)
-        try runHook(script: script, stdin: #"{"session_id":"big","cwd":"/p","hook_event_name":"PostToolUse","tool_name":"Write","tool_input":{"content":"\#(big)"}}"#)
-        let text = try String(contentsOf: dir.appendingPathComponent("claude-events.jsonl"), encoding: .utf8)
-        #expect(text.count < 500)
-        let e = try #require(AgentEvent.parse(line: text.trimmingCharacters(in: .newlines)))
-        #expect(e.sessionID == "big" && e.toolName == "Write" && e.name == "PostToolUse")
     }
 
     @Test func exitsZeroEvenWhenLogIsUnwritable() throws {

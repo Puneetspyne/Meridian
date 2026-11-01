@@ -30,7 +30,8 @@ final class BatterySampler {
         let isPlugged = state == kIOPSACPowerValue || pluggedIn
         let minutesKey = charging ? kIOPSTimeToFullChargeKey : kIOPSTimeToEmptyKey
         let minutes = (d[minutesKey] as? NSNumber)?.intValue
-        let remaining = (minutes ?? -1) >= 0 ? minutes : nil // IOPS reports -1 while still estimating.
+        // IOPS reports -1 while still estimating, and 0 when plugged in but not charging; neither is a real estimate.
+        let remaining = (minutes ?? -1) > 0 || (minutes == 0 && charged) ? minutes : nil
 
         var metrics = BatteryMetrics(isPresent: true, level: level, isCharging: charging, isPluggedIn: isPlugged,
                                      isFullyCharged: charged, minutesRemaining: remaining)

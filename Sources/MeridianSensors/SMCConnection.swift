@@ -89,3 +89,6 @@ public final class SMCConnection: @unchecked Sendable {
         return (0..<count).compactMap { key(at: $0) }
     }
 }
+
+/// Lets tests assert the C struct layout without importing CMeridian.
+typealias SMCParamStructProbe = SMCParamStruct
