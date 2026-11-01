@@ -14,6 +14,8 @@ public protocol SignalProvider: AnyObject {
     var onChange: (@MainActor () -> Void)? { get set }
     func start()
     func stop()
+    /// The app pushes a copy of the user's module preferences on start and on every change.
+    func apply(_ settings: ModuleSettings)
 }
 
 /// Shared user preferences every module can read. The app owns persistence; modules receive a copy.

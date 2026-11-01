@@ -125,16 +125,8 @@ final class AppModel {
     }
 
     private func pushModuleSettings() {
-        for p in providers {
-            (p as? ModuleSettingsReceiving)?.apply(settings.modules)
-        }
+        for p in providers { p.apply(settings.modules) }
     }
-}
-
-/// Providers that care about user preferences adopt this; the model pushes a copy on every change.
-@MainActor
-protocol ModuleSettingsReceiving: AnyObject {
-    func apply(_ settings: ModuleSettings)
 }
 
 enum MetricID: String, CaseIterable, Hashable {

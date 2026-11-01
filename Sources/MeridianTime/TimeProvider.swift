@@ -10,4 +10,5 @@ public final class TimeProvider: SignalProvider {
     public init(settings: ModuleSettings) {}
     public func start() {}
     public func stop() {}
+    public func apply(_ settings: ModuleSettings) {}
 }
