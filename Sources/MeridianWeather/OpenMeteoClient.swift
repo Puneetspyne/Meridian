@@ -1,4 +1,5 @@
 import Foundation
+import MeridianKit
 
 /// The seam tests use to avoid the network.
 public protocol WeatherTransport: Sendable {
@@ -59,7 +60,7 @@ public struct OpenMeteoClient: Sendable {
     // MARK: Calls
 
     /// `unit` is accepted for API symmetry with the UI but the request is always celsius.
-    public func forecast(latitude: Double, longitude: Double, unit: TemperatureUnitHint = .celsius) async throws -> Forecast {
+    public func forecast(latitude: Double, longitude: Double, unit: TemperatureUnit = .celsius) async throws -> Forecast {
         guard let url = Self.forecastURL(latitude: latitude, longitude: longitude) else { throw WeatherError.invalidURL }
         let data = try await fetch(url)
         do {
@@ -114,6 +115,3 @@ public struct OpenMeteoClient: Sendable {
         return data
     }
 }
-
-/// Kept so call sites read `forecast(latitude:longitude:unit:)` as the brief specifies; the wire unit is never changed.
-public typealias TemperatureUnitHint = _TemperatureUnitAlias
