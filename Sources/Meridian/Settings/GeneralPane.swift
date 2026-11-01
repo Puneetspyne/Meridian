@@ -31,6 +31,18 @@ struct GeneralPane: View {
             }
 
             Section {
+                Picker("Layout", selection: $model.settings.cardLayout) {
+                    ForEach(CardLayout.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                Picker("Material", selection: $model.settings.cardMaterial) {
+                    ForEach(CardMaterial.allCases) { Text($0.label).tag($0) }
+                }
+            } header: { Text("Card appearance") } footer: {
+                Text("The wide bar spreads under the notch; the tall card hangs from it. Glass uses Liquid Glass on macOS 26.")
+            }
+
+            Section {
                 Toggle("Open the notch when the pointer rests on it", isOn: $model.settings.notchHoverToOpen)
                 ValueSlider(title: "Hover delay", value: $model.settings.notchHoverDelay,
                             range: 0.1...1.0, step: 0.05) { String(format: "%.2f s", $0) }

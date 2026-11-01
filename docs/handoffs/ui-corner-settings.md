@@ -74,3 +74,10 @@ Needs from the coordinator
 Not verified
 - Calendar authorization flow (see above), hook install/remove, first-launch card, the menu bar right-click menu and non-icon styles.
 - The first snapshot batch of Thresholds was retaken after the label fix; Tiles and General were not re-shot.
+
+## Card layout and material round
+- General pane: new "Card appearance" group with a segmented Layout picker (Tall card / Wide bar) and a Material picker (Glass / Matte black), one footer covering both lines. Verified visually; `docs/snapshots/settings-general.png` refreshed.
+- Status item right-click menu: "Card layout" submenu (checkmark on the current layout) writes `settings.cardLayout`. Compiled, not opened.
+- Corner card panel: unchanged mechanism and already size-driven. It reads `NSHostingView.fittingSize` (which follows the card's reported size), re-lays out whenever SwiftUI invalidates the intrinsic size (so switching layout while open resizes it), anchors to the corner with an 8 pt inset and clamps width and height to the layout area (visible frame, below the notch band). An 880 pt bar fits the 1710 pt screen with room to spare.
+- NOT verified: the wide layout in the corner. At the time of checking `CardView` still had no layout switch (`cardLayout` is not referenced under Sources/Meridian/Card or Bodies), so only the pane could be verified. Re-check with `--mock --scenario calm`, body Corner, Layout Wide bar once the notch workstream lands it.
+- Settings the panes write persist in the shared `Meridian` defaults domain, which other agents' runs also use; I deleted the key afterwards (the command printed nothing, so unconfirmed).

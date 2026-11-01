@@ -208,6 +208,18 @@ final class StatusItemController: NSObject {
         bodyItem.submenu = sub
         menu.addItem(bodyItem)
 
+        let layoutItem = NSMenuItem(title: "Card layout", action: nil, keyEquivalent: "")
+        let layoutMenu = NSMenu(title: "Card layout")
+        for layout in CardLayout.allCases {
+            let mi = NSMenuItem(title: layout.label, action: #selector(pickLayout(_:)), keyEquivalent: "")
+            mi.target = self
+            mi.representedObject = layout.rawValue
+            mi.state = model.settings.cardLayout == layout ? .on : .off
+            layoutMenu.addItem(mi)
+        }
+        layoutItem.submenu = layoutMenu
+        menu.addItem(layoutItem)
+
         menu.addItem(.separator())
         add(menu, "Settings…", #selector(settings), ",")
         menu.addItem(.separator())
@@ -234,6 +246,11 @@ final class StatusItemController: NSObject {
     @objc private func togglePause() {
         paused.toggle()
         if paused { model.stop() } else { model.start() }
+    }
+
+    @objc private func pickLayout(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let layout = CardLayout(rawValue: raw) else { return }
+        model.settings.cardLayout = layout
     }
 
     @objc private func pickBody(_ sender: NSMenuItem) {
