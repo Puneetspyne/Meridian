@@ -5,6 +5,7 @@ import MeridianKit
 struct HeroView: View {
     var signal: Signal?
     var ringNamespace: Namespace.ID? = nil
+    var ringIsSource: Bool = true
 
     var body: some View {
         HStack(spacing: 14) {
@@ -69,7 +70,7 @@ struct HeroView: View {
         }
         .frame(width: size, height: size)
         if let ns = ringNamespace {
-            glyph.matchedGeometryEffect(id: "signalRing", in: ns)
+            glyph.matchedGeometryEffect(id: "signalRing", in: ns, isSource: ringIsSource)
         } else {
             glyph
         }

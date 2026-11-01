@@ -3,6 +3,10 @@ import MeridianKit
 
 /// The notch body: one black shape that is a wrapped notch with two wings when closed, grows slightly on hover,
 /// and unfolds downward into the card when open. The wing ring flies into the hero ring through a shared namespace.
+///
+/// Performance: this view never reads `model.top`. The closed wings live in `ClosedHost`, which turns the signal
+/// into an `Equatable` `WingModel` and hides it behind `.equatable()`, so a new sample with the same visible
+/// result redraws nothing. The card only exists in the tree while open.
 struct NotchView: View {
     let model: AppModel
     let state: NotchState
@@ -10,13 +14,19 @@ struct NotchView: View {
     let panelHeight: CGFloat
     var openSettings: () -> Void = {}
     var onClosedTap: () -> Void = {}
+    /// Called when a card control needs the keyboard (quick add): the host makes its panel key, or lets go.
+    var onKeyboard: (Bool) -> Void = { _ in }
     /// ImageRenderer cannot draw a ScrollView, so the snapshot renderer turns this off.
     var scrolls: Bool = true
 
     @Namespace private var ringSpace
 
     private var layout: NotchLayout {
-        NotchLayout(geometry: geometry, wing: model.settings.notchWingWidth, cardHeight: state.cardHeight, panelHeight: panelHeight)
+        NotchLayout(geometry: geometry, wing: effectiveWing, cardHeight: state.cardHeight, panelHeight: panelHeight)
+    }
+
+    private var effectiveWing: CGFloat {
+        min(model.settings.notchWingWidth, state.wingCap ?? .infinity)
     }
 
     private var reduce: Bool {
@@ -29,9 +39,7 @@ struct NotchView: View {
         let size = layout.size(open: open, hovering: state.isHovering)
         let shape = NotchShape(topRadius: open ? Design.NotchMetrics.openTopRadius : 0,
                                bottomRadius: open ? Design.Radius.card : Design.Radius.notchBottom)
-        let top = model.top
         let fadeIn: Animation = reduce ? .easeInOut(duration: 0.15) : Design.Motion.swap.delay(Design.Motion.contentDelay)
-        let showsHairline = !open && (top?.attention ?? .calm) >= .warning
 
         ZStack(alignment: .top) {
             ZStack(alignment: .top) {
@@ -40,100 +48,26 @@ struct NotchView: View {
                     openContent
                         .transition(.opacity.animation(fadeIn))
                 } else {
-                    closedContent(top: top, layout: layout)
+                    ClosedHost(model: model, state: state, geometry: geometry, wing: layout.wing,
+                               ringSpace: ringSpace, reduce: reduce, onTap: onClosedTap)
                         .transition(.opacity)
-                }
-                if showsHairline, let top {
-                    Rectangle()
-                        .fill(Design.Color.attention(top.attention))
-                        .frame(height: 1)
-                        .padding(.horizontal, Design.Radius.notchBottom * 0.7)
-                        .frame(maxHeight: .infinity, alignment: .bottom)
-                        .transition(.opacity)
-                        .accessibilityHidden(true)
                 }
             }
             .frame(width: size.width, height: size.height, alignment: .top)
             .clipShape(shape)
             .animation(reduce ? nil : Design.Motion.swap, value: state.cardHeight)
-            .animation(Design.Motion.respecting(Design.Motion.swap, reduce: reduce), value: showsHairline)
         }
         .frame(width: layout.panelWidth, height: layout.panelHeight, alignment: .top)
         .environment(\.meridianReduceMotion, reduce)
         .environment(\.meridianNotchClearance, CGSize(width: geometry.notchWidth + 2 * Design.Size.notchInsetSide + 12, height: geometry.notchHeight))
+        .environment(\.meridianKeyboard, onKeyboard)
         .ignoresSafeArea()
-    }
-
-    // MARK: Closed
-
-    private func closedContent(top: Signal?, layout: NotchLayout) -> some View {
-        let extra = state.isHovering ? Design.NotchMetrics.hoverGrowWing : 0
-        let wingWidth = layout.wing + Design.Size.notchInsetSide + extra
-        return HStack(spacing: 0) {
-            leftWing(top)
-                .padding(.leading, Design.NotchMetrics.wingEdgePadding)
-                .frame(width: wingWidth, alignment: .leading)
-            Color.clear.frame(width: geometry.notchWidth)
-            rightWing(top)
-                .padding(.trailing, Design.NotchMetrics.wingEdgePadding)
-                .frame(width: wingWidth, alignment: .trailing)
-        }
-        .frame(height: geometry.notchHeight, alignment: .center)
-        .frame(maxHeight: .infinity, alignment: .top)
-        .contentShape(Rectangle())
-        .onTapGesture { onClosedTap() }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(top?.accessibilityPhrase ?? "Meridian, waiting for data")
-        .accessibilityHint("Opens the Meridian card")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction { onClosedTap() }
-    }
-
-    private func leftWing(_ top: Signal?) -> some View {
-        let tint = top.map { Design.Color.tint($0.tint) } ?? Design.Color.tint(.neutral)
-        return HStack(spacing: 6) {
-            Group {
-                if let top, top.progress == nil {
-                    Image(systemName: top.symbol)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(tint)
-                        .symbolRenderingMode(.hierarchical)
-                } else {
-                    Ring(progress: top?.progress, lineWidth: Design.Size.ringStroke, tint: tint)
-                }
-            }
-            .frame(width: Design.Size.ring, height: Design.Size.ring)
-            .matchedGeometryEffect(id: "signalRing", in: ringSpace)
-
-            if let top, !top.isLiveCountdown, top.value != nil {
-                SignalValue(signal: top, font: Design.Font.wing, color: top.attention >= .warning ? tint : Design.Color.textPrimary)
-            } else if top == nil {
-                Num(Placeholder.dash, font: Design.Font.wing, color: Design.Color.textTertiary)
-            }
-        }
-    }
-
-    @ViewBuilder private func rightWing(_ top: Signal?) -> some View {
-        if let top, top.attention > .calm {
-            let color = top.attention >= .warning ? Design.Color.attention(top.attention) : Design.Color.textPrimary
-            if top.isLiveCountdown {
-                SignalValue(signal: top, font: Design.Font.wing, color: color)
-            } else {
-                Text(top.title)
-                    .font(Design.Font.wing)
-                    .foregroundStyle(color)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-        } else {
-            ClockText(use24Hour: model.settings.modules.uses24HourClock)
-        }
     }
 
     // MARK: Open
 
     private var card: some View {
-        CardView(model: model, presentation: .notch, ringNamespace: ringSpace, openSettings: openSettings)
+        CardView(model: model, presentation: .notch, ringNamespace: ringSpace, ringIsSource: true, openSettings: openSettings)
             .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
                 if abs(state.cardHeight - height) > 0.5 { state.cardHeight = height }
             }
@@ -145,6 +79,119 @@ struct NotchView: View {
                 .scrollBounceBehavior(.basedOnSize)
         } else {
             card.frame(maxHeight: .infinity, alignment: .top)
+        }
+    }
+}
+
+// MARK: - Closed
+
+/// Reads the top signal (the only place that does while closed) and hands the wings an `Equatable` value.
+private struct ClosedHost: View {
+    let model: AppModel
+    let state: NotchState
+    let geometry: NotchGeometry
+    let wing: CGFloat
+    let ringSpace: Namespace.ID
+    let reduce: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        let w = WingModel(model.top)
+        ZStack(alignment: .top) {
+            ClosedWings(wing: w, geometry: geometry, wingWidth: wing + Design.Size.notchInsetSide + (state.isHovering ? Design.NotchMetrics.hoverGrowWing : 0),
+                        ringSpace: ringSpace, use24Hour: model.settings.modules.uses24HourClock, onTap: onTap)
+                .equatable()
+            if w.attention >= .warning {
+                Rectangle()
+                    .fill(Design.Color.attention(w.attention))
+                    .frame(height: 1)
+                    .padding(.horizontal, Design.Radius.notchBottom * 0.7)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .transition(.opacity)
+                    .accessibilityHidden(true)
+            }
+        }
+        .animation(Design.Motion.respecting(Design.Motion.swap, reduce: reduce), value: w.attention >= .warning)
+    }
+}
+
+private struct ClosedWings: View, Equatable {
+    let wing: WingModel
+    let geometry: NotchGeometry
+    let wingWidth: CGFloat
+    let ringSpace: Namespace.ID
+    let use24Hour: Bool
+    let onTap: () -> Void
+
+    static func == (l: ClosedWings, r: ClosedWings) -> Bool {
+        l.wing == r.wing && l.geometry == r.geometry && l.wingWidth == r.wingWidth && l.use24Hour == r.use24Hour
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            leftWing
+                .padding(.leading, edgePadding)
+                .frame(width: wingWidth, alignment: .leading)
+            Color.clear.frame(width: geometry.notchWidth)
+            rightWing
+                .padding(.trailing, edgePadding)
+                .frame(width: wingWidth, alignment: .trailing)
+        }
+        .frame(height: geometry.notchHeight, alignment: .center)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .contentShape(Rectangle())
+        .onTapGesture { onTap() }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(wing.spoken)
+        .accessibilityHint("Opens the Meridian card")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onTap() }
+    }
+
+    private var tint: Color { Design.Color.tint(wing.tint) }
+    /// Tighter edge padding when the wing is clamped, so text truncates later.
+    private var edgePadding: CGFloat { wingWidth < 100 ? 10 : Design.NotchMetrics.wingEdgePadding }
+
+    private var leftWing: some View {
+        HStack(spacing: 6) {
+            Group {
+                if !wing.isEmpty, wing.progress == nil {
+                    Image(systemName: wing.symbol)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(tint)
+                        .symbolRenderingMode(.hierarchical)
+                } else {
+                    Ring(progress: wing.progress, lineWidth: Design.Size.ringStroke, tint: tint, animation: nil)
+                }
+            }
+            .frame(width: Design.Size.ring, height: Design.Size.ring)
+            // The only holder of this id while closed: the hero is not in the tree until the card opens.
+            .matchedGeometryEffect(id: "signalRing", in: ringSpace, isSource: true)
+
+            if let text = wing.valueText {
+                Num(text, font: Design.Font.wing, color: wing.attention >= .warning ? tint : Design.Color.textPrimary, animates: false)
+            } else if wing.isEmpty {
+                Num(Placeholder.dash, font: Design.Font.wing, color: Design.Color.textTertiary)
+            }
+        }
+    }
+
+    @ViewBuilder private var rightWing: some View {
+        if !wing.isEmpty, wing.attention > .calm {
+            let color = wing.attention >= .warning ? Design.Color.attention(wing.attention) : Design.Color.textPrimary
+            if wing.isLiveCountdown, let deadline = wing.deadline {
+                TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                    Num(Format.countdown(max(0, deadline.timeIntervalSince(ctx.date))), font: Design.Font.wing, color: color, animates: false)
+                }
+            } else {
+                Text(wing.title)
+                    .font(Design.Font.wing)
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        } else {
+            ClockText(use24Hour: use24Hour)
         }
     }
 }

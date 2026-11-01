@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import Carbon.HIToolbox
 import MeridianKit
 
 /// Decides which bodies exist and keeps them in step with the Settings body mode and the screens.
@@ -14,6 +15,7 @@ import MeridianKit
 @MainActor
 final class BodyCoordinator {
     static let toggleCardNotification = Notification.Name("meridian.toggleCard")
+    static let openCardNotification = Notification.Name("meridian.openCard")
 
     private let model: AppModel
     private let openSettings: () -> Void
@@ -23,6 +25,8 @@ final class BodyCoordinator {
     private var cornerCardOpen = false
     private var running = false
     private var observers: [NSObjectProtocol] = []
+    private var hotKey: HotKey?
+    private lazy var alerts = TimerAlerts(model: model)
 
     init(model: AppModel, openSettings: @escaping () -> Void) {
         self.model = model
@@ -36,16 +40,26 @@ final class BodyCoordinator {
         running = true
         reconcile()
         trackSettings()
+        alerts.start()
+        // Option-Command-T: open the card with the quick-add field focused.
+        hotKey = HotKey(keyCode: kVK_ANSI_T, modifiers: cmdKey | optionKey) { [weak self] in self?.openCard(focusQuickAdd: true) }
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.reconcile() }
         })
         observers.append(NotificationCenter.default.addObserver(forName: Self.toggleCardNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.toggleCard() }
         })
+        // "Open Meridian" and the first-launch reveal: open on the active body, never toggle closed.
+        observers.append(NotificationCenter.default.addObserver(forName: Self.openCardNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { if let self, !self.isCardOpen { self.openCard() } }
+        })
     }
 
     func stop() {
         running = false
+        alerts.stop()
+        hotKey?.unregister()
+        hotKey = nil
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         observers = []
         notches.values.forEach { $0.stop() }
@@ -60,10 +74,11 @@ final class BodyCoordinator {
 
     var isCardOpen: Bool { notches.values.contains { $0.isOpen } || cornerCardOpen }
 
-    func openCard() {
+    func openCard(focusQuickAdd: Bool = false) {
         if let notch = primaryNotch {
-            notch.openCard()
+            notch.openCard(focusQuickAdd: focusQuickAdd)
         } else if let corner {
+            if focusQuickAdd { CardCommands.shared.quickAddPending = true }
             corner.openCard()
             cornerCardOpen = true
         }

@@ -7,6 +7,8 @@ struct Ring: View {
     var lineWidth: CGFloat = Design.Size.ringStroke
     var tint: Color = Design.Color.tint(.neutral)
     var track: Color = Design.Color.trackIdle
+    /// The closed wing ring passes nil: animating a once-a-second tick kept the notch rendering at full frame rate (measured, about 10 times the idle CPU).
+    var animation: Animation? = Design.Motion.ring
     @Environment(\.meridianReduceMotion) private var reduce
 
     var body: some View {
@@ -21,7 +23,7 @@ struct Ring: View {
             }
         }
         .padding(lineWidth / 2)
-        .animation(reduce ? nil : Design.Motion.ring, value: p)
+        .animation(reduce ? nil : animation, value: p)
         .accessibilityHidden(true)
     }
 }

@@ -5,7 +5,9 @@ import MeridianKit
 /// A panel that can never take focus or activate the app: it floats over the menu bar and the pointer works on it,
 /// but the user's frontmost app stays frontmost.
 final class NotchPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
+    /// Only while a text field in the card (quick add) needs typing; otherwise the panel never takes focus.
+    var allowsKey = false
+    override var canBecomeKey: Bool { allowsKey }
     override var canBecomeMain: Bool { false }
     /// Borderless windows are normally pushed below the menu bar. This one lives over it on purpose.
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
@@ -60,6 +62,7 @@ final class NotchPanelController {
     private var dwellTimer: Timer?
     private var closeTimer: Timer?
     private var idleTimer: Timer?
+    private var capTimer: Timer?
     private var moveMonitors: [Any] = []
     private var openMonitors: [Any] = []
     private var observers: [NSObjectProtocol] = []
@@ -85,9 +88,10 @@ final class NotchPanelController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
+        // `isFloatingPanel = true` resets the level to .floating, so it must come before the level.
+        panel.isFloatingPanel = true
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         panel.isMovable = false
         panel.isReleasedWhenClosed = false
@@ -98,13 +102,15 @@ final class NotchPanelController {
 
         let view = NotchView(model: model, state: state, geometry: g, panelHeight: panelHeight,
                              openSettings: { [weak self] in self?.closeCard(); self?.openSettings() },
-                             onClosedTap: { [weak self] in self?.openCard() })
+                             onClosedTap: { [weak self] in self?.openCard() },
+                             onKeyboard: { [weak self] on in self?.setKeyboard(on) })
         let host = NotchHostingView(rootView: view)
         host.hitRect = { [weak self] in self?.hitRectInView() ?? .zero }
         panel.contentView = host
         self.host = host
         self.panel = panel
 
+        refreshWingCap()
         applyFrame()
         panel.orderFrontRegardless()
         installMoveMonitors()
@@ -113,6 +119,7 @@ final class NotchPanelController {
 
     func stop() {
         cancelTimers()
+        capTimer?.invalidate(); capTimer = nil
         removeOpenMonitors()
         moveMonitors.forEach { NSEvent.removeMonitor($0) }
         moveMonitors = []
@@ -129,7 +136,9 @@ final class NotchPanelController {
 
     // MARK: Card
 
-    func openCard() {
+    /// `focusQuickAdd`: also ask the Time strip to open its quick-add field (the global hotkey does this).
+    func openCard(focusQuickAdd: Bool = false) {
+        if focusQuickAdd { CardCommands.shared.quickAddPending = true }
         guard panel != nil, !state.isOpen else { return }
         cancelTimers()
         installOpenMonitors()
@@ -142,6 +151,7 @@ final class NotchPanelController {
 
     func closeCard() {
         guard state.isOpen else { return }
+        setKeyboard(false)
         cancelTimers()
         removeOpenMonitors()
         suppressHover = pointerInside
@@ -153,6 +163,26 @@ final class NotchPanelController {
 
     func toggleCard() { state.isOpen ? closeCard() : openCard() }
 
+    /// Quick add needs typing. Becoming key does not activate the app (non-activating panel), so the
+    /// frontmost app stays frontmost while the user types.
+    private func setKeyboard(_ on: Bool) {
+        guard let panel else { return }
+        panel.allowsKey = on
+        if on {
+            panel.makeKey()
+            resetIdle()
+        } else if panel.isKeyWindow {
+            panel.resignKey()
+        }
+    }
+
+    /// Keep the wings clear of the menu bar items macOS placed beside the notch. Cheap, so a slow timer suffices.
+    private func refreshWingCap() {
+        guard let g = geometry else { return }
+        let cap = MenuBarItems.wingCap(for: g)
+        if cap != state.wingCap { state.wingCap = cap }
+    }
+
     // MARK: Geometry
 
     private func applyFrame() {
@@ -163,7 +193,7 @@ final class NotchPanelController {
 
     private var currentLayout: NotchLayout? {
         guard let g = geometry else { return nil }
-        return NotchLayout(geometry: g, wing: model.settings.notchWingWidth, cardHeight: state.cardHeight, panelHeight: panelHeight)
+        return NotchLayout(geometry: g, wing: min(model.settings.notchWingWidth, state.wingCap ?? .infinity), cardHeight: state.cardHeight, panelHeight: panelHeight)
     }
 
     private func currentSize() -> CGSize {
@@ -281,6 +311,10 @@ final class NotchPanelController {
     // MARK: Observers
 
     private func installObservers() {
+        capTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { if let self, !self.state.isOpen { self.refreshWingCap() } }
+        }
+        capTimer?.tolerance = 1
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.screensChanged() }
         })
@@ -300,7 +334,9 @@ final class NotchPanelController {
         panelHeight = NotchLayout.panelHeight(for: screen.frame.height, notchHeight: g.notchHeight)
         host?.rootView = NotchView(model: model, state: state, geometry: g, panelHeight: panelHeight,
                                    openSettings: { [weak self] in self?.closeCard(); self?.openSettings() },
-                                   onClosedTap: { [weak self] in self?.openCard() })
+                                   onClosedTap: { [weak self] in self?.openCard() },
+                                   onKeyboard: { [weak self] on in self?.setKeyboard(on) })
+        refreshWingCap()
         applyFrame()
         panel?.orderFrontRegardless()
     }

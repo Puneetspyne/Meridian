@@ -1,5 +1,6 @@
 import SwiftUI
 import MeridianKit
+import MeridianTime
 
 /// The open card both bodies show. Keep `CardView(model:presentation:)` working: other workstreams embed it.
 ///
@@ -11,6 +12,7 @@ struct CardView: View {
     var presentation: CardPresentation = .notch
     /// Shared with the closed wing so the wing ring flies into the hero ring on open.
     var ringNamespace: Namespace.ID? = nil
+    var ringIsSource: Bool = true
     /// Called by the gear button. Falls back to the environment, then to a notification the app can observe.
     var openSettings: (() -> Void)? = nil
 
@@ -25,7 +27,7 @@ struct CardView: View {
         let content = VStack(spacing: 0) {
             if isNotch { notchBand }
             VStack(spacing: Design.Space.m) {
-                HeroView(signal: model.top, ringNamespace: ringNamespace)
+                HeroView(signal: model.top, ringNamespace: ringNamespace, ringIsSource: ringIsSource)
                 CardTiles(model: model)
                 if showsTimeStrip { TimeStrip(model: model) }
                 if showsAgentsStrip { AgentsStrip(model: model) }
@@ -48,14 +50,14 @@ struct CardView: View {
 
     private var showsTimeStrip: Bool {
         let t = Set(model.settings.visibleTiles)
-        guard !t.isDisjoint(with: [.meeting, .timers, .clocks, .weather]) else { return false }
-        return !TimeStrip.entries(in: model.signals).isEmpty
+        guard !t.isDisjoint(with: [.meeting, .timers, .clocks]) else { return false }
+        return model.provider(TimeProvider.self) != nil
+            || !TimeStrip.entries(in: model.signals).isEmpty
             || !TimeStrip.clocks(in: model.signals).isEmpty
-            || (t.contains(.weather) && TimeStrip.weather(in: model.signals) != nil)
     }
 
     private var showsAgentsStrip: Bool {
-        model.settings.visibleTiles.contains(.agents) && (model.settings.modules.agentsEnabled || !AgentsStrip.sessions(in: model.signals).isEmpty)
+        model.settings.visibleTiles.contains(.agents)
     }
 
     private var chipName: String? { model.snapshot.system?.chipName }

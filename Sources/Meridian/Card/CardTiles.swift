@@ -1,12 +1,13 @@
 import SwiftUI
 import MeridianKit
+import MeridianWeather
 
 /// The 2-column tile grid. Order comes from `Settings.visibleTiles`; tiles that belong to the Time and Agents
 /// strips are not drawn here. Missing data shows an em dash, never a zero that lies.
 struct CardTiles: View {
     let model: AppModel
 
-    private static let metricTiles: Set<Tile> = [.cpu, .gpu, .memory, .disk, .network, .battery, .temperature, .fans, .power, .processes]
+    private static let metricTiles: Set<Tile> = [.cpu, .gpu, .memory, .disk, .network, .battery, .temperature, .fans, .power, .processes, .weather]
 
     var body: some View {
         let tiles = model.settings.visibleTiles.filter { Self.metricTiles.contains($0) }
@@ -82,6 +83,7 @@ struct CardTiles: View {
         case .fans: fansTile
         case .power: powerTile
         case .processes: processesTile
+        case .weather: weatherTile
         default: EmptyView()
         }
     }
@@ -233,6 +235,56 @@ struct CardTiles: View {
             valueRow(value, caption: parts.isEmpty ? nil : parts.joined(separator: " \u{00B7} "))
             spark(.power, tint: lineColor(.calm), minSpan: 5)
         }
+    }
+
+    @ViewBuilder private var weatherTile: some View {
+        // Observing `signals` is what refreshes this when the provider publishes a new forecast.
+        let signal = model.signals.first { $0.kind == .weather && $0.id == "weather.current" }
+        let provider = model.provider(WeatherProvider.self)
+        let hasForecast = provider?.current != nil
+        if !(provider?.isEnabled == true || signal != nil) {
+            MetricTile(title: "Weather", spoken: "Weather is off. Turn on in Settings, Modules.") {
+                Text("Turn on in Settings \u{2192} Modules")
+                    .font(Design.Font.body).foregroundStyle(Design.Color.textTertiary).padding(.top, 8)
+            }
+        } else if hasForecast, let provider, let cur = provider.current {
+            let unit = unit
+            let temp = Format.temperature(cur.temperature, unit: unit)
+            let feels = "feels \(Format.temperature(cur.feelsLike, unit: unit))"
+            let day = provider.daily.first
+            let hl = day.map { "H \(Format.temperature($0.high, unit: unit))  L \(Format.temperature($0.low, unit: unit))" }
+            let rain = provider.hourly.first { $0.precipitationProbability >= 40 && $0.time >= Date().addingTimeInterval(-1800) }
+            let rainText = rain.map { "Rain \($0.precipitationProbability)% at \(Self.hour($0.time, use24: model.settings.modules.uses24HourClock))" }
+            let line2 = [rainText, hl].compactMap { $0 }.joined(separator: " \u{00B7} ")
+            MetricTile(title: "Weather", trailing: provider.place?.name ?? model.settings.modules.weatherLocationName,
+                              spoken: "Weather \(cur.condition.description), \(temp), \(feels)" + (rainText.map { ", " + $0 } ?? "") + (hl.map { ", " + $0 } ?? "")) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: cur.condition.symbol).symbolRenderingMode(.multicolor).font(.system(size: 17))
+                    Num(temp, font: Design.Font.tileValue)
+                    Text(feels).font(Design.Font.caption).foregroundStyle(Design.Color.textTertiary)
+                    Spacer(minLength: 0)
+                }
+                .frame(height: 24, alignment: .leading)
+                Text(line2.isEmpty ? cur.condition.description : line2)
+                    .font(Design.Font.caption).foregroundStyle(Design.Color.textSecondary).lineLimit(1).padding(.top, 5)
+            }
+        } else {
+            // Enabled, no forecast yet (or a signal-only source such as the snapshot renderer).
+            let value = signal?.value ?? Placeholder.dash
+            MetricTile(title: "Weather", trailing: signal?.title, spoken: "Weather \(value)") {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if let signal { Image(systemName: signal.symbol).symbolRenderingMode(.multicolor).font(.system(size: 17)) }
+                Num(value, font: Design.Font.tileValue)
+                Spacer(minLength: 0)
+            }
+            .frame(height: 24, alignment: .leading)
+            Text(signal?.detail ?? "Loading").font(Design.Font.caption).foregroundStyle(Design.Color.textSecondary).lineLimit(1).padding(.top, 5)
+            }
+        }
+    }
+
+    private static func hour(_ date: Date, use24: Bool) -> String {
+        let f = DateFormatter(); f.dateFormat = use24 ? "HH:mm" : "h a"; return f.string(from: date)
     }
 
     private var processesTile: some View {

@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import MeridianKit
+import MeridianTime
 
 /// Renders the notch and card surfaces to PNG with mock data, headless: no panels, no run loop.
 /// `swift run Meridian --snapshot docs/snapshots`
@@ -48,6 +49,15 @@ enum SnapshotRenderer {
         let empty = AppModel(source: MockTelemetrySource(), settings: snapshotSettings())
         written += render(model: empty, name: "empty", into: outputDirectory)
 
+        // Wings clamped to 84 pt, as when macOS put a menu bar item close to the notch.
+        for name in ["hot", "calm"] {
+            let m = makeModel(name == "hot" ? .hot : .calm)
+            let st = NotchState()
+            st.wingCap = 84
+            if let url = write(closedCanvas(model: m, state: st), size: CGSize(width: 600, height: 120),
+                               to: outputDirectory.appendingPathComponent("notch-closed-narrow-\(name).png")) { written.append(url) }
+        }
+
         // Hovering, closed, calm.
         let hoverModel = makeModel(.calm)
         let hoverState = NotchState()
@@ -55,6 +65,16 @@ enum SnapshotRenderer {
         if let url = write(closedCanvas(model: hoverModel, state: hoverState), size: CGSize(width: 600, height: 120), to: outputDirectory.appendingPathComponent("notch-hover-calm.png")) {
             written.append(url)
         }
+
+        // Quick add open, mid-typing: the live parse preview under the field.
+        CardCommands.shared.quickAddPending = true
+        CardCommands.shared.quickAddPrefill = "tomorrow 9am standup"
+        let qa = makeModel(.meeting)
+        let quick = ZStack { FakeDesktop(menuBar: false); CardView(model: qa, presentation: .corner(.topLeft)).padding(32) }
+            .frame(width: Design.Size.cardWidth + 64)
+        if let url = write(quick.fixedSize(horizontal: false, vertical: true), size: nil, to: outputDirectory.appendingPathComponent("card-quickadd.png")) { written.append(url) }
+        CardCommands.shared.quickAddPending = false
+        CardCommands.shared.quickAddPrefill = nil
 
         if let url = write(ComponentSheet(model: makeModel(.calm)), size: nil, to: outputDirectory.appendingPathComponent("components.png")) {
             written.append(url)
@@ -68,6 +88,7 @@ enum SnapshotRenderer {
     private static func snapshotSettings() -> Settings {
         var s = Settings()
         s.hiddenTiles = []
+        s.modules.secondaryTimeZones = ["UTC", "Asia/Tokyo"]
         return s
     }
 
@@ -76,6 +97,19 @@ enum SnapshotRenderer {
         let provider = SnapshotProvider(signals: signals(for: scenario))
         model.register(provider: provider)
         provider.onChange?()
+
+        // The real Time module, in a throwaway directory, so the strip shows its real controls.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("meridian-snapshot-\(UUID().uuidString)")
+        let time = TimeProvider(settings: model.settings.modules, storeDirectory: dir)
+        model.register(provider: time)
+        if scenario == .meeting {
+            _ = time.addTimer(name: "Focus", seconds: 25 * 60)
+            _ = time.addCountdown(name: "Release", fireAt: Date().addingTimeInterval(2 * 3600 + 14 * 60))
+            time.startStopwatch()
+            time.lapStopwatch()
+        } else {
+            time.onChange?()
+        }
 
         // Wide steps: the mock waves have periods of a few seconds, and 180 samples a second apart alias into a regular zigzag.
         let step = 17.0
@@ -87,9 +121,7 @@ enum SnapshotRenderer {
     private static func signals(for scenario: Scenario) -> [Signal] {
         let now = Date()
         var out: [Signal] = [
-            Signal(id: "time.clock.utc", kind: .clock, attention: .calm, title: "UTC", symbol: "clock", value: "14:02", priority: 0),
-            Signal(id: "time.clock.tokyo", kind: .clock, attention: .calm, title: "Tokyo", symbol: "clock", value: "23:02", priority: 0),
-            Signal(id: "weather.current", kind: .weather, attention: .calm, title: "Cupertino", symbol: "cloud.sun.fill", value: "21\u{00B0}", priority: 0),
+            Signal(id: "weather.current", kind: .weather, attention: .calm, title: "Cupertino", detail: "Partly cloudy \u{00B7} feels 22\u{00B0}", symbol: "cloud.sun.fill", value: "21\u{00B0}", priority: 0),
         ]
         switch scenario {
         case .meeting:

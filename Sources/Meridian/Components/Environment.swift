@@ -7,6 +7,7 @@ import MeridianKit
 private struct ReduceMotionKey: EnvironmentKey { static let defaultValue = false }
 private struct SnapshotKey: EnvironmentKey { static let defaultValue = false }
 private struct OpenSettingsKey: EnvironmentKey { static let defaultValue: () -> Void = {} }
+private struct KeyboardKey: EnvironmentKey { static let defaultValue: (Bool) -> Void = { _ in } }
 private struct NotchClearanceKey: EnvironmentKey { static let defaultValue: CGSize = .zero }
 
 extension EnvironmentValues {
@@ -23,6 +24,11 @@ extension EnvironmentValues {
     var meridianOpenSettings: () -> Void {
         get { self[OpenSettingsKey.self] }
         set { self[OpenSettingsKey.self] = newValue }
+    }
+    /// Asks the hosting panel for (true) or releases (false) keyboard focus, for text fields in the card.
+    var meridianKeyboard: (Bool) -> Void {
+        get { self[KeyboardKey.self] }
+        set { self[KeyboardKey.self] = newValue }
     }
     /// Size of the dead zone the hardware notch leaves at the top of an open notch card.
     var meridianNotchClearance: CGSize {
@@ -73,12 +79,15 @@ struct Num: View {
     let text: String
     var font: Font
     var color: Color = Design.Color.textPrimary
+    /// False for text that ticks every second while the card is closed: rolling digits cost a full-rate render.
+    var animates = true
     @Environment(\.meridianReduceMotion) private var reduce
 
-    init(_ text: String, font: Font, color: Color = Design.Color.textPrimary) {
+    init(_ text: String, font: Font, color: Color = Design.Color.textPrimary, animates: Bool = true) {
         self.text = text
         self.font = font
         self.color = color
+        self.animates = animates
     }
 
     init(_ text: String, size: CGFloat, weight: Font.Weight = .semibold, color: Color = Design.Color.textPrimary) {
@@ -90,8 +99,8 @@ struct Num: View {
             .font(font)
             .foregroundStyle(color)
             .lineLimit(1)
-            .contentTransition(.numericText())
-            .animation(reduce ? nil : Design.Motion.value, value: text)
+            .contentTransition(animates ? .numericText() : .identity)
+            .animation(reduce || !animates ? nil : Design.Motion.value, value: text)
     }
 }
 
