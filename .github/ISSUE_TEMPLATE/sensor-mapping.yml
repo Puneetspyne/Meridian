@@ -1,0 +1,30 @@
+name: Sensor mapping
+description: Contribute temperature, fan or power sensor keys for a chip
+labels: [sensor-mapping]
+body:
+  - type: input
+    id: chip
+    attributes:
+      label: Chip and Mac model
+      description: For example "M3 Pro, MacBook Pro 14-inch (Nov 2023)".
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+    validations:
+      required: true
+  - type: textarea
+    id: contribute
+    attributes:
+      label: meridianctl contribute
+      description: Paste the JSON printed by `meridianctl contribute`.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Anything you know about which key is which (for example a reading that matches another monitor).

@@ -10,3 +10,4 @@ DerivedData/
 docs/snapshots/*.png
 !docs/*.png
 .claude-session-cache.md
+Resources/AppIcon.icns
