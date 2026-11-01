@@ -129,3 +129,36 @@ extension View {
         modifier(MeridianGlass(radius: radius, prominent: prominent))
     }
 }
+
+// MARK: - Notch and card metrics (additive; owned by the notch/card workstream)
+
+extension Design {
+    enum NotchMetrics {
+        /// Closed shape grows this much taller and each wing this much wider while the pointer rests on it.
+        static let hoverGrowHeight: CGFloat = 6
+        static let hoverGrowWing: CGFloat = 12
+        /// The concave flare where the open card meets the top screen edge.
+        static let openTopRadius: CGFloat = 14
+        /// Transparent room around the biggest shape inside the panel.
+        static let panelWidth: CGFloat = 540
+        static let panelMaxCardHeight: CGFloat = 760
+        /// Pointer must leave the shape this long before an open card closes.
+        static let exitCloseDelay: TimeInterval = 0.4
+        /// Wing content sits this far from the outer edge of the black shape.
+        static let wingEdgePadding: CGFloat = 14
+    }
+}
+
+extension Design.Motion {
+    /// Sparkline trim-on-appear.
+    static let draw = Animation.smooth(duration: 0.8)
+    /// Content of the open card fades in this long after the shape starts to move.
+    static let contentDelay: Double = 0.06
+}
+
+extension Design.Size {
+    static let heroRing: CGFloat = 56
+    static let heroRingStroke: CGFloat = 4
+    static let cardPadding: CGFloat = 16
+    static let sparkHeight: CGFloat = 16
+}
