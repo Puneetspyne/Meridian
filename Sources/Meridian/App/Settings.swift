@@ -53,6 +53,21 @@ enum Tile: String, Codable, CaseIterable, Identifiable {
     static let defaultOrder: [Tile] = [.cpu, .memory, .temperature, .network, .disk, .battery, .gpu, .fans, .power, .processes, .meeting, .timers, .clocks, .agents, .weather]
 }
 
+/// How the open card is shaped. Tall is a drawer hanging from the notch; wide is a low horizontal pebble
+/// that spreads left and right under the menu bar.
+enum CardLayout: String, Codable, CaseIterable, Identifiable {
+    case tall, wide
+    var id: String { rawValue }
+    var label: String { switch self { case .tall: "Tall card"; case .wide: "Wide bar" } }
+}
+
+/// The surface the open card is drawn on. Glass is Liquid Glass on macOS 26 and a dark material before it.
+enum CardMaterial: String, Codable, CaseIterable, Identifiable {
+    case glass, black
+    var id: String { rawValue }
+    var label: String { switch self { case .glass: "Glass"; case .black: "Matte black" } }
+}
+
 enum MenuBarStyle: String, Codable, CaseIterable, Identifiable {
     case icon, cpu, temperature, topSignal, hidden
     var id: String { rawValue }
@@ -70,6 +85,8 @@ struct Settings: Codable, Equatable {
     var notchHoverDelay: TimeInterval = 0.35
     var notchWingWidth: CGFloat = 132
     var cardAutoCloseSeconds: TimeInterval = 8
+    var cardLayout: CardLayout = .tall
+    var cardMaterial: CardMaterial = .glass
     var refreshInterval: TimeInterval = 1.0
     var tiles: [Tile] = Tile.defaultOrder
     var hiddenTiles: Set<Tile> = [.agents, .weather]
