@@ -4,6 +4,12 @@
 serial queue (HID and SMC reads run beside the rest), never touches the main actor, and fails soft: a missing symbol, key or
 permission gives `nil` (or an empty list) for that metric, never a thrown error for the whole snapshot.
 
+## Cadence
+
+`LiveTelemetrySource(tiers:)` takes a `SamplingTiers` (defaults: GPU 2 s, temperatures 3 s, power 2 s, processes 3 s; CPU, memory, network, disks
+and battery on every call; system info once). Between refreshes `sample()` returns each slow sampler's last result. Use `SamplingTiers.everyCall`
+for one-shot tools and tests. At the defaults the full sampler costs about 1 % of one core in a release build (see the handoff for the measurement).
+
 Rates are deltas between calls, so the first call returns zero rates and `power.source == "unavailable"`.
 `LiveTelemetrySource.init()` queues a warm-up sample, and `meridianctl snapshot` takes a baseline and a second sample 0.7 s later.
 
@@ -42,7 +48,7 @@ All of these are looked up with `dlopen`/`dlsym` at runtime. If any symbol is mi
   Objective-C block. If no counter advances between two samples the result is `source: "unavailable"` with nil watts
   (or `source: "smc"` with only `totalWatts` when `PSTR` exists).
 - **SMC**: `IOServiceOpen("AppleSMC")` works unprivileged for reads. Keys are enumerated once (`#KEY` count, command 8), and the
-  temperature keys that return a usable value are re-read each second; a full pass repeats every 120 samples.
+  live temperature keys (sane value, aliases removed) are re-read each tick; the list is rediscovered only if reads keep failing.
 
 ## Identifiers and names (for the UI)
 

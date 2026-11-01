@@ -5,52 +5,69 @@ import MeridianKit
 /// reads only the temperature keys, which is a handful of microsecond-scale calls.
 public final class SMCSampler: @unchecked Sendable {
     public let connection: SMCConnection?
-    private var temperatureKeys: [String]?
-    private var activeKeys: [String] = []
-    private var passes = 0
-    private var fanCount: Int?
+    private var activeKeys: [String]?
+    private var strikes = 0
+    private var fanKeys: [(index: Int, name: String?)]?
     private let lock = NSLock()
 
     public init(connection: SMCConnection? = SMCConnection()) {
         self.connection = connection
     }
 
-    private func loadTemperatureKeys() -> [String] {
-        if let temperatureKeys { return temperatureKeys }
-        let keys = (connection?.allKeys() ?? []).filter { $0.hasPrefix("T") }
-        temperatureKeys = keys
-        return keys
+    private static let temperatureTypes: Set<String> = ["flt", "sp78", "sp87", "sp96", "spa5", "spb4", "sp69", "fpe2"]
+
+    /// Walks all ~1600 keys once (about 0.4 s) and keeps the "T" keys that decode to a sane temperature right now.
+    /// Each SMC read is a round trip to the SMC firmware, so every later tick reads only this short list.
+    /// Keys that report the exact same float as an earlier key in their group are aliases of one sensor
+    /// (Th04/Th05 on M2) and are dropped, which removes a fifth of the reads for no loss of information.
+    private func discover(_ connection: SMCConnection) -> [String] {
+        var live: [String] = []
+        var seen = Set<String>()
+        for key in connection.allKeys() where key.hasPrefix("T") {
+            guard let r = reading(raw: connection.read(key), key: key) else { continue }
+            let signature = "\(r.group.rawValue)/\(r.celsius)"
+            if seen.insert(signature).inserted { live.append(key) }
+        }
+        return live
     }
 
-    /// Each SMC read costs a round trip to the SMC firmware (about a quarter of a millisecond on M2), and roughly
-    /// a third of the "T" keys never yield a usable temperature. A full pass finds the live ones; the following
-    /// samples read only those, and a full pass repeats every few minutes in case a sensor wakes up.
+    private func reading(raw: SMCKeyValue?, key: String) -> TemperatureReading? {
+        guard let raw, let c = raw.value, c > 0, c <= 130,
+              Self.temperatureTypes.contains(raw.type.trimmingCharacters(in: .whitespaces)) else { return nil }
+        return TemperatureReading(id: key, name: SensorCatalog.name(forSMCKey: key), celsius: c,
+                                  group: SensorCatalog.group(forSMCKey: key))
+    }
+
+    /// Never rescans the key list per sample. It is rediscovered only after three consecutive passes where
+    /// most reads fail outright (the SMC connection went stale, for example after sleep).
     public func temperatures() -> [TemperatureReading] {
         lock.lock(); defer { lock.unlock() }
         guard let connection else { return [] }
-        let fullPass = passes % 120 == 0
-        passes += 1
+        if activeKeys == nil { activeKeys = discover(connection) }
         var readings: [TemperatureReading] = []
-        for key in fullPass ? loadTemperatureKeys() : activeKeys {
-            guard let raw = connection.read(key), let c = raw.value, c > 0, c <= 130 else { continue }
-            // Only temperature-shaped types: a "T" key holding something else must not show as degrees.
-            guard ["flt", "sp78", "sp87", "sp96", "spa5", "spb4", "sp69", "fpe2"].contains(raw.type.trimmingCharacters(in: .whitespaces)) else { continue }
-            readings.append(TemperatureReading(id: key, name: SensorCatalog.name(forSMCKey: key), celsius: c,
-                                               group: SensorCatalog.group(forSMCKey: key)))
+        var failed = 0
+        for key in activeKeys ?? [] {
+            let raw = connection.read(key)
+            if raw == nil { failed += 1; continue }
+            if let r = reading(raw: raw, key: key) { readings.append(r) }
         }
-        if fullPass { activeKeys = readings.map(\.id) }
+        let total = activeKeys?.count ?? 0
+        strikes = (total > 0 && failed * 2 > total) ? strikes + 1 : 0
+        if strikes >= 3 { activeKeys = nil; strikes = 0 }
         return readings
     }
 
     public func fans() -> [FanReading] {
         lock.lock(); defer { lock.unlock() }
         guard let connection else { return [] }
-        if fanCount == nil { fanCount = Int(connection.read("FNum")?.value ?? 0) }
-        guard let count = fanCount, count > 0 else { return [] }
-        return (0..<min(count, 8)).compactMap { i in
+        if fanKeys == nil {
+            let count = Int(connection.read("FNum")?.value ?? 0)
+            fanKeys = (0..<min(max(count, 0), 8)).map { ($0, connection.read("F\($0)ID")?.text) }
+        }
+        return (fanKeys ?? []).compactMap { fan in
+            let i = fan.index
             guard let rpm = connection.read("F\(i)Ac")?.value, rpm >= 0 else { return nil }
-            let name = connection.read("F\(i)ID")?.text ?? "Fan \(i + 1)"
-            return FanReading(id: "F\(i)", name: name, rpm: rpm,
+            return FanReading(id: "F\(i)", name: fan.name ?? "Fan \(i + 1)", rpm: rpm,
                               minRPM: connection.read("F\(i)Mn")?.value,
                               maxRPM: connection.read("F\(i)Mx")?.value,
                               targetRPM: connection.read("F\(i)Tg")?.value)

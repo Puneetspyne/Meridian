@@ -5,7 +5,8 @@ import MeridianSensors
 enum Commands {
     /// Rates and power are deltas, so a one-shot snapshot takes a baseline, waits briefly, then samples again.
     static func snapshot() async {
-        let source = LiveTelemetrySource()
+        // Every tier on every call: the two calls are 0.7 s apart, shorter than the app's cadence tiers.
+        let source = LiveTelemetrySource(tiers: .everyCall)
         _ = try? await source.sample()
         try? await Task.sleep(nanoseconds: 700_000_000)
         guard let snapshot = try? await source.sample() else { return }

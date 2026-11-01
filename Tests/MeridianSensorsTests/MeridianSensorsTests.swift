@@ -127,7 +127,7 @@ import Testing
 
 @Suite(.serialized) struct LiveSmokeTests {
     @Test func samplePopulatesEverySection() async throws {
-        let source = LiveTelemetrySource()
+        let source = LiveTelemetrySource(tiers: .everyCall)
         _ = try await source.sample()
         try await Task.sleep(nanoseconds: 300_000_000)
         let s = try await source.sample()
@@ -153,7 +153,8 @@ import Testing
     }
 
     @Test func sampleStaysWithinBudgetAfterWarmUp() async throws {
-        let source = LiveTelemetrySource()
+        // Worst case: every sampler runs on every call.
+        let source = LiveTelemetrySource(tiers: .everyCall)
         _ = try await source.sample()
         _ = try await source.sample()
         let clock = ContinuousClock()
@@ -167,5 +168,28 @@ import Testing
         print("sample() latency over 5 calls: mean \(total / 5), worst \(worst)")
         // The brief asks for ~50 ms; allow headroom for a loaded CI machine but catch real regressions.
         #expect(worst < .milliseconds(250), "worst sample took \(worst)")
+    }
+
+    @Test func tiersReturnCachedResultsBetweenRefreshes() async throws {
+        let source = LiveTelemetrySource(tiers: SamplingTiers(gpu: 60, temperatures: 60, power: 60, processes: 60))
+        let first = try await source.sample()
+        let second = try await source.sample()
+        // Slow tiers repeat their last result; fast tiers still move.
+        #expect(first.thermal == second.thermal)
+        #expect(first.processes == second.processes)
+        #expect(first.power == second.power)
+        #expect(second.timestamp > first.timestamp)
+        #expect(second.cpu != nil && second.memory != nil)
+    }
+
+    @Test func processListIsAggregatedAndExcludesSelf() async throws {
+        let source = LiveTelemetrySource(tiers: .everyCall)
+        _ = try await source.sample()
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let s = try await source.sample()
+        let names = s.processes.map(\.name)
+        #expect(Set(names).count == names.count)
+        #expect(s.processes.count <= 8)
+        #expect(!s.processes.contains { $0.pid == getpid() })
     }
 }

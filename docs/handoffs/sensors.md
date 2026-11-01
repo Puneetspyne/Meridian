@@ -83,3 +83,42 @@ sat at 18-25% while cores 4-7 sat at 0-4%, consistent with that. Only M2 verifie
 - No Intel hardware to test, so Intel paths (`TC0P` names, `TG0P`, fans, `fpe2` fan decode) are unit-tested only.
 - `IOReportIterate` is not used (see docs). No per-core frequency, no per-process GPU, no discrete-GPU memory.
 - Nothing committed or staged.
+
+## Follow-up: cadence tiers and idle CPU
+
+Measured with `swift build -c release --scratch-path .build/sensors --product meridianctl`, `meridianctl watch` in the background, and
+`/usr/bin/top -l N -s S -stats pid,cpu -pid <pid>` (first sample discarded), on a machine that was also busy compiling.
+
+| | CPU of one core (`watch`, whole process incl. printing) |
+| --- | --- |
+| Before (every sampler every second) | 2.3, 3.6, 2.6 (mean about 2.8 %) |
+| After (default tiers) | 10 samples at 3 s: 0.8 1.6 1.0 0.6 1.2 1.3 0.7 0.5 1.5 1.2 (mean 1.04 %) |
+
+Target was under 1.5 % of one core; met. The sampler share is lower than 1.04 % because that figure includes the CLI's own loop and printing.
+
+What changed (`LiveTelemetrySource.swift` and samplers):
+- `SamplingTiers` (public, init parameter of `LiveTelemetrySource`): `gpu` 2 s, `temperatures` 3 s (HID and SMC), `power` 2 s, `processes` 3 s.
+  CPU, memory, network, disks and battery run on every call; system info is read once. `SamplingTiers.everyCall` runs everything each call
+  (used by `meridianctl snapshot` and the latency test). Between refreshes `sample()` returns the sampler's last result. A 50 ms slack stops timer jitter
+  from skipping every other refresh.
+- Per-call CPU cost I measured (release, thread CPU time): disk 16.5 ms before and 1.5 ms after, battery 0.75 ms, GPU 2.3 ms, processes 4.9 ms,
+  SMC pass about 4 ms, HID pass about 2 ms, network 0.35 ms, CPU and memory under 0.1 ms. Per second at default tiers that is roughly 7 ms (about 0.7 %).
+  **Disk was the real hog** and the brief did not name it: it walked and copied the properties of every IOBlockStorageDriver and ran capacity queries
+  each second. Drives are now classified once and retained (refreshed every 30 s or when the mount list changes), volume names and totals are cached,
+  free space refreshes every 10 s, and each tick reads one registry property per drive plus `getmntinfo`.
+- SMC: keys are discovered once (first call, off-main, about 0.4 s). The live list keeps temperature keys that decode sanely and drops alias keys
+  that report the identical float within a group (149 to 129 readings). Ticks read only that list; fan keys and names are cached; `PSTR` is one read.
+  The list is rediscovered only after three consecutive passes where more than half the reads fail outright. I also fixed a bug of mine where each key was read twice.
+  The wall time of an SMC pass is 60 to 100 ms because every read waits on SMC firmware, but it is waiting, not CPU (about 4 ms), and it runs on a side queue.
+- HID: client and services were already kept alive. Sensors that are invalid or unchanged for 10 reads are now polled only every 10th pass and report their
+  last value in between (safer than dropping them, so a sensor that wakes up reappears).
+- Processes: own pid excluded; the top 64 raw rows by CPU (memory as tie-break) are resolved to names, summed by name, and the heaviest member's pid is kept;
+  top 8 after aggregation. pid-to-name resolutions are cached and evicted when the pid disappears or its CPU counter goes backwards. The pid walk only runs on the processes tier.
+  Aggregation only sees the top 64 raw rows, so an app made of many tiny helpers can be slightly under-counted.
+
+Proof the rates and temperatures still move (`meridianctl watch 7`, release): CPU, network and disk throughput change on every line; `cpuT` changed on
+lines 4 and 6 (48 C, 54 C, 52 C), that is every 3 s; `power` switched from `smc` to `ioreport` once the 2 s tier had two samples and then updated every second line.
+
+Consequences for the app: the first one to three samples after launch carry the fallback power source (`smc`/`unavailable`) and processes without CPU deltas
+(the processes tier needs two runs, 3 s apart). Tests run: 19 passing (`everyCall` worst-case latency about 90 ms in debug under load; added tests for
+cached tiers and for process aggregation and self-exclusion).

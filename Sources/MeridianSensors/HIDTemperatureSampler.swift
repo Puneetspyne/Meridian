@@ -16,7 +16,13 @@ public final class HIDTemperatureSampler: @unchecked Sendable {
         var copyProperty: CopyPropertyFn, copyEvent: CopyEventFn, getFloat: GetFloatFn
     }
 
-    private struct Service { var pointer: UnsafeRawPointer; var name: String }
+    private struct Service {
+        var pointer: UnsafeRawPointer
+        var name: String
+        var last: Double?
+        /// Consecutive reads that were invalid or identical to the previous one.
+        var stable = 0
+    }
 
     private let api: API?
     private var client: UnsafeRawPointer?
@@ -56,12 +62,25 @@ public final class HIDTemperatureSampler: @unchecked Sendable {
         if services.isEmpty && (calls == 1 || calls - servicesLoadedAt >= 30) { loadServices(api) }
 
         var out: [(String, Double)] = []
-        for service in services {
-            guard let event = api.copyEvent(service.pointer, Self.kIOHIDEventTypeTemperature, 0, 0) else { continue }
+        for i in services.indices {
+            let service = services[i]
+            // A sensor that has been constant (or invalid) for 10 reads is re-read only every 10th call and otherwise
+            // reports its last value, so dead and static sensors cost almost nothing but can still wake up.
+            if service.stable >= 10 && calls % 10 != 0 {
+                if let last = service.last { out.append((service.name, last)) }
+                continue
+            }
+            guard let event = api.copyEvent(service.pointer, Self.kIOHIDEventTypeTemperature, 0, 0) else {
+                services[i].stable += 1
+                continue
+            }
             let value = api.getFloat(event, Int32(Self.kIOHIDEventTypeTemperature << 16))
             Unmanaged<AnyObject>.fromOpaque(event).release()
             // "tcal" is a factory calibration constant, not a temperature, so it is left out.
-            if value > 0 && value <= 130 && value.isFinite && !service.name.hasSuffix("tcal") { out.append((service.name, value)) }
+            let valid = value > 0 && value <= 130 && value.isFinite && !service.name.hasSuffix("tcal")
+            services[i].stable = (!valid || value == service.last) ? service.stable + 1 : 0
+            services[i].last = valid ? value : nil
+            if valid { out.append((service.name, value)) }
         }
         return out
     }
@@ -81,7 +100,7 @@ public final class HIDTemperatureSampler: @unchecked Sendable {
                   let name = Unmanaged<AnyObject>.fromOpaque(namePtr).takeRetainedValue() as? String else { return nil }
             // The array owns the services; keep it alive for the life of the sampler by retaining each service.
             _ = Unmanaged<AnyObject>.fromOpaque(service).retain()
-            return Service(pointer: service, name: name)
+            return Service(pointer: service, name: name, last: nil)
         }
     }
 
