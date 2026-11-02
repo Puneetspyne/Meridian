@@ -22,7 +22,7 @@ struct NotchView: View {
     @Namespace private var ringSpace
 
     private var layout: NotchLayout {
-        NotchLayout(geometry: geometry, wing: effectiveWing, cardHeight: state.cardHeight, panelHeight: panelHeight)
+        NotchLayout(geometry: geometry, wing: effectiveWing, cardHeight: state.cardHeight, panelHeight: panelHeight, cardLayout: model.settings.cardLayout)
     }
 
     private var effectiveWing: CGFloat {
@@ -44,6 +44,7 @@ struct NotchView: View {
         ZStack(alignment: .top) {
             ZStack(alignment: .top) {
                 Design.Color.notch
+                if open, model.settings.cardMaterial == .glass { glassBody(layout) }
                 if open {
                     openContent
                         .transition(.opacity.animation(fadeIn))
@@ -61,6 +62,7 @@ struct NotchView: View {
         .environment(\.meridianReduceMotion, reduce)
         .environment(\.meridianNotchClearance, CGSize(width: geometry.notchWidth + 2 * Design.Size.notchInsetSide + 12, height: geometry.notchHeight))
         .environment(\.meridianKeyboard, onKeyboard)
+        .environment(\.meridianScreenWidth, geometry.screenWidth)
         .ignoresSafeArea()
     }
 
@@ -73,8 +75,25 @@ struct NotchView: View {
             }
     }
 
+    /// The glass under the black notch band: same silhouette as the card's lower part, with the top edge fading
+    /// out of the band so there is no seam. The band itself stays matte black.
+    private func glassBody(_ layout: NotchLayout) -> some View {
+        let shape = UnevenRoundedRectangle(bottomLeadingRadius: Design.Radius.card, bottomTrailingRadius: Design.Radius.card, style: .continuous)
+        return VStack(spacing: 0) {
+            Color.clear.frame(height: geometry.notchHeight)
+            CardGlassBackground(shape: shape, scrim: state.scrim)
+                .overlay(alignment: .top) {
+                    LinearGradient(colors: [Design.Color.notch, Design.Color.notch.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: 22)
+                }
+                .clipShape(shape)
+        }
+        .frame(width: layout.openSize.width - 2 * Design.NotchMetrics.openTopRadius)
+        .transition(.opacity)
+        .accessibilityHidden(true)
+    }
+
     @ViewBuilder private var openContent: some View {
-        if scrolls {
+        if scrolls, model.settings.cardLayout == .tall {
             ScrollView(.vertical, showsIndicators: false) { card }
                 .scrollBounceBehavior(.basedOnSize)
         } else {

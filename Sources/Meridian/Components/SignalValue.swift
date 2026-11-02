@@ -28,14 +28,15 @@ struct SignalValue: View {
     var signal: Signal
     var font: Font
     var color: Color = Design.Color.textPrimary
+    var animates = false
 
     var body: some View {
         if signal.isLiveCountdown, let deadline = signal.deadline {
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                Num(Format.countdown(max(0, deadline.timeIntervalSince(ctx.date))), font: font, color: color)
+                Num(Format.countdown(max(0, deadline.timeIntervalSince(ctx.date))), font: font, color: color, animates: animates)
             }
         } else if let value = signal.value {
-            Num(value, font: font, color: color)
+            Num(value, font: font, color: color, animates: animates)
         }
     }
 }

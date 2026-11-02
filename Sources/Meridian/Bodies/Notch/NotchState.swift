@@ -11,6 +11,8 @@ final class NotchState {
     /// Last measured height of the open card, kept across opens so the drawer opens to the right size at once.
     /// Upper bound for each wing so the black never covers menu bar items macOS placed beside the notch.
     var wingCap: CGFloat?
+    /// Black scrim over the glass, from the system appearance at the moment the card opens.
+    var scrim: Double = 0.10
     var cardHeight: CGFloat = 640
     var systemReduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 }

@@ -98,6 +98,8 @@ final class NotchPanelController {
         panel.animationBehavior = .none
         panel.ignoresMouseEvents = true
         panel.acceptsMouseMovedEvents = true
+        // Always the dark appearance: white text on glass must not depend on the system being in dark mode.
+        panel.appearance = NSAppearance(named: .darkAqua)
         panel.title = "Meridian notch"
 
         let view = NotchView(model: model, state: state, geometry: g, panelHeight: panelHeight,
@@ -115,7 +117,14 @@ final class NotchPanelController {
         panel.orderFrontRegardless()
         installMoveMonitors()
         installObservers()
+        if Self.keepOpenForMeasuring {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.openCard() }
+        }
     }
+
+    /// `--keep-card-open`: open the card two seconds after launch and never auto-close it. For measuring CPU with
+    /// the card open without moving the pointer.
+    static let keepOpenForMeasuring = CommandLine.arguments.contains("--keep-card-open")
 
     func stop() {
         cancelTimers()
@@ -141,6 +150,7 @@ final class NotchPanelController {
         if focusQuickAdd { CardCommands.shared.quickAddPending = true }
         guard panel != nil, !state.isOpen else { return }
         cancelTimers()
+        state.scrim = SystemAppearance.scrim()
         installOpenMonitors()
         animate(Design.Motion.open) {
             state.isOpen = true
@@ -187,13 +197,13 @@ final class NotchPanelController {
 
     private func applyFrame() {
         guard let panel, let g = geometry else { return }
-        let w = Design.NotchMetrics.panelWidth
+        let w = NotchLayout.panelWidth(screenWidth: g.screenWidth)
         panel.setFrame(NSRect(x: g.centerX - w / 2, y: g.topY - panelHeight, width: w, height: panelHeight), display: true)
     }
 
     private var currentLayout: NotchLayout? {
         guard let g = geometry else { return nil }
-        return NotchLayout(geometry: g, wing: min(model.settings.notchWingWidth, state.wingCap ?? .infinity), cardHeight: state.cardHeight, panelHeight: panelHeight)
+        return NotchLayout(geometry: g, wing: min(model.settings.notchWingWidth, state.wingCap ?? .infinity), cardHeight: state.cardHeight, panelHeight: panelHeight, cardLayout: model.settings.cardLayout)
     }
 
     private func currentSize() -> CGSize {
@@ -211,7 +221,7 @@ final class NotchPanelController {
 
     private func hitRectInView() -> NSRect {
         let s = currentSize()
-        let w = Design.NotchMetrics.panelWidth
+        let w = currentLayout?.panelWidth ?? Design.NotchMetrics.panelWidth
         return NSRect(x: (w - s.width) / 2, y: 0, width: s.width, height: s.height)
     }
 
@@ -270,7 +280,7 @@ final class NotchPanelController {
         idleTimer?.invalidate()
         idleTimer = nil
         let seconds = model.settings.cardAutoCloseSeconds
-        guard seconds > 0 else { return }
+        guard seconds > 0, !Self.keepOpenForMeasuring else { return }
         idleTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.closeCard() }
         }

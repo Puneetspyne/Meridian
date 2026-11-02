@@ -5,7 +5,7 @@ import MeridianAgents
 
 // MARK: - Shared bits
 
-private struct IconButton: View {
+struct IconButton: View {
     var symbol: String
     var label: String
     var tint: Color = Design.Color.textSecondary

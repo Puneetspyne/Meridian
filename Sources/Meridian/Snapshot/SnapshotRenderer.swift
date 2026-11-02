@@ -37,6 +37,16 @@ enum SnapshotRenderer {
             written += render(model: model, name: scenario.rawValue, into: outputDirectory)
         }
 
+        // Wide layout for the headline scenarios, and both materials of the tall calm card.
+        for scenario in [Scenario.calm, .hot, .meeting, .agent] {
+            let model = makeModel(scenario, layout: .wide)
+            written += renderOpen(model: model, notch: "notch-open-wide-\(scenario.rawValue)", card: "card-wide-\(scenario.rawValue)", into: outputDirectory)
+        }
+        for material in [CardMaterial.glass, .black] {
+            let model = makeModel(.calm, material: material)
+            written += renderOpen(model: model, notch: "notch-open-calm-\(material.rawValue)", card: "card-calm-\(material.rawValue)", into: outputDirectory)
+        }
+
         // Every closed state stacked, for reviewing the wings side by side.
         let gallery = VStack(spacing: 0) {
             ForEach(Array(models.enumerated()), id: \.offset) { _, entry in
@@ -85,15 +95,18 @@ enum SnapshotRenderer {
 
     // MARK: Scenarios
 
-    private static func snapshotSettings() -> Settings {
+    private static func snapshotSettings(layout: CardLayout = .tall, material: CardMaterial = .glass) -> Settings {
         var s = Settings()
+        s.cardLayout = layout
+        s.cardMaterial = material
         s.hiddenTiles = []
         s.modules.secondaryTimeZones = ["UTC", "Asia/Tokyo"]
         return s
     }
 
-    private static func makeModel(_ scenario: Scenario) -> AppModel {
-        let model = AppModel(source: MockTelemetrySource(scenario: scenario.mock), settings: snapshotSettings())
+    private static func makeModel(_ scenario: Scenario, layout: CardLayout = .tall, material: CardMaterial = .glass) -> AppModel {
+        // Settings are passed to init, never assigned afterwards: assigning would persist them to UserDefaults.
+        let model = AppModel(source: MockTelemetrySource(scenario: scenario.mock), settings: snapshotSettings(layout: layout, material: material))
         let provider = SnapshotProvider(signals: signals(for: scenario))
         model.register(provider: provider)
         provider.onChange?()
@@ -151,27 +164,34 @@ enum SnapshotRenderer {
         if let url = write(closedCanvas(model: model, state: closedState), size: CGSize(width: 600, height: 120),
                            to: dir.appendingPathComponent("notch-closed-\(name).png")) { out.append(url) }
 
+        out += renderOpen(model: model, notch: "notch-open-\(name)", card: "card-\(name)", into: dir)
+        return out
+    }
+
+    private static func renderOpen(model: AppModel, notch: String, card cardName: String, into dir: URL) -> [URL] {
+        var out: [URL] = []
+        let g = notchGeometry
+        let clearance = CGSize(width: g.notchWidth + 2 * Design.Size.notchInsetSide + 12, height: g.notchHeight)
         // Measure the card the way the panel would, then draw the open notch at that height.
-        let clearance = CGSize(width: notchGeometry.notchWidth + 2 * Design.Size.notchInsetSide + 12, height: notchGeometry.notchHeight)
         let measure = ImageRenderer(content: CardView(model: model, presentation: .notch)
-            .environment(\.meridianNotchClearance, clearance).environment(\.meridianSnapshot, true))
+            .environment(\.meridianNotchClearance, clearance).environment(\.meridianScreenWidth, g.screenWidth).environment(\.meridianSnapshot, true))
         measure.scale = 1
         let cardHeight = CGFloat(measure.cgImage?.height ?? 640)
 
         let openState = NotchState()
         openState.isOpen = true
         openState.cardHeight = cardHeight
-        if let url = write(openCanvas(model: model, state: openState, cardHeight: cardHeight),
-                           size: CGSize(width: 580, height: cardHeight + 56),
-                           to: dir.appendingPathComponent("notch-open-\(name).png")) { out.append(url) }
+        let width = NotchLayout.panelWidth(screenWidth: g.screenWidth) + 40
+        if let url = write(openCanvas(model: model, state: openState, cardHeight: cardHeight, width: width),
+                           size: CGSize(width: width, height: cardHeight + 56),
+                           to: dir.appendingPathComponent("\(notch).png")) { out.append(url) }
 
         let card = ZStack {
             FakeDesktop(menuBar: false)
             CardView(model: model, presentation: .corner(.topLeft)).padding(32)
         }
-        .frame(width: Design.Size.cardWidth + 64)
-        if let url = write(card.fixedSize(horizontal: false, vertical: true), size: nil,
-                           to: dir.appendingPathComponent("card-\(name).png")) { out.append(url) }
+        .environment(\.meridianScreenWidth, g.screenWidth)
+        if let url = write(card.fixedSize(), size: nil, to: dir.appendingPathComponent("\(cardName).png")) { out.append(url) }
         return out
     }
 
@@ -183,12 +203,12 @@ enum SnapshotRenderer {
         .frame(width: 600, height: 120)
     }
 
-    private static func openCanvas(model: AppModel, state: NotchState, cardHeight: CGFloat) -> some View {
+    private static func openCanvas(model: AppModel, state: NotchState, cardHeight: CGFloat, width: CGFloat) -> some View {
         ZStack(alignment: .top) {
             FakeDesktop(menuBar: true)
             NotchView(model: model, state: state, geometry: notchGeometry, panelHeight: cardHeight + 40, scrolls: false)
         }
-        .frame(width: 580, height: cardHeight + 56)
+        .frame(width: width, height: cardHeight + 56)
     }
 
     // MARK: Writing

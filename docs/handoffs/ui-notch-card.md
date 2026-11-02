@@ -52,3 +52,26 @@ Verified on this Mac (M2 Air, notch): the closed shape with wings (live, hot sce
 6. **Weather tile** from `WeatherProvider` (condition symbol, temperature, feels-like, next rain hour, high/low), or "Turn on in Settings → Modules". Not seen live (weather disabled here); snapshot shows the signal-only path.
 7. Footer chip and uptime come only from `snapshot.system.chipName` and `snapshot.cpu.uptime`.
 8. `meridian.openCard` is observed: opens on the notch if present, else the corner, never toggles closed.
+
+## Round 3: wide pebble, glass, polish, performance budget
+
+**Wide layout** (`Settings.cardLayout == .wide`): `Card/WideCard.swift`, `Card/CompactTiles.swift`. A low bar, 880 pt wide (clamped to screen minus 24 pt, flares included), about 168 pt tall on the notch (38 pt band, 112 pt row, padding; +30 pt when agent pills show). One row: compact hero (44 pt ring), compact tiles (CPU with core bars, Memory, Temperature, Network, Disk, Battery, GPU, Power; as many as fit at 112 pt minimum, the rest are hidden, never squeezed; 4 at 880), time column (clock, next meeting with Join or running timer with pause, one world clock), agent pills under the tiles when there are sessions. No scrolling in wide mode. Corner and menu bar presentations use the same layouts with a 34 pt header instead of the notch band; the view has a fixed frame so `fittingSize` is honest (`WideMetrics`, `CardView.width(layout:screenWidth:isNotch:)`).
+**Toggle:** `LayoutToggle` (rectangle.portrait / rectangle) in the notch band, the corner footer or wide header. It writes `model.settings.cardLayout` inside `Motion.open`: the shape frame morphs (`NotchLayout` carries layout and screen width), the old content leaves at once and the new content fades in 90 ms later. Verified live: tall to wide on this Mac.
+**Glass:** `cardMaterial == .glass` (default): the black band around the hardware notch stays matte; below it `CardGlassBackground` (Liquid Glass on macOS 26, ultra-thin material before) with hairline, a 22 pt fade out of the band, and a black scrim of 10 percent (dark system appearance) or 14 percent (light), chosen from `NSApp.effectiveAppearance` when the card opens. The panel itself is forced to dark aqua so white text never lands on light glass. Tiles on glass are a flat 7.5 percent white fill (no blur behind blur); on `.black` they are glass over a dark underlay as before. Corner presentation: glass card, or solid black with a hairline. Not verified on a light wallpaper.
+**Polish:** ring stroke gradient (tint to tint at 70 percent) with round caps; 1 pt top highlight at 6 percent on every tile; hover lifts a tile 1 pt with a stronger hairline (only exists while the card is open); card entrance staggers sections by 20 ms; sparklines trim-draw on first appearance only.
+**Not done from the brief: rolling digits.** `contentTransition(.numericText())` is not used. Measured in a release build with the card open and a smooth mock signal: plain text 2 percent CPU; with a numericText on the hero value 13 percent; an `onChange` that writes state, or an id-swap push transition, 6 to 12 percent. SwiftUI repaints this panel in software, and any effect layer on a value that changes every second is redrawn each tick. For the same reason the ring only animates for jumps of 15 points or more, the core bars do not animate, and the matched-geometry effect on the hero ring is dropped 0.9 s after open. `Num(animates:)` is kept as a no-op for when that cost goes away. "Updated N s ago" is now an event-driven label ("Live", then 3, 10, 30, 60 s...) instead of a once-a-second TimelineView, which made the card repaint twice a second.
+
+**CPU (release build, `swift build -c release --scratch-path .build/ui-a-rel`, `--keep-card-open` flag opens the card 2 s after launch and never auto-closes; 20 s of `ps` CPU time after 8 s settle; M2 Air).** I did not use `scripts/build-app.sh`: it writes `build/Meridian.app`, which another instance was running from.
+
+| state | mock calm | live |
+| --- | --- | --- |
+| closed | 0.6 % | 1.6 % (sampler cost) |
+| open, tall, glass | 2.4 % | 3.0 to 5.1 % (noisy) |
+| open, tall, black | 2.4 to 3.4 % | 3.1 to 4.9 % |
+| open, wide, glass | 1.5 % | 2.3 to 8.0 % (one outlier) |
+| open, wide, black | 2.3 % | 2.7 to 4.4 % |
+
+Glass versus black: no difference beyond noise (under 0.5 percent). Live runs include the 1.6 percent the samplers cost with the card closed, so the card's own share is about 1.4 percent tall and 0.7 to 1 percent wide. Tall with live data can touch 3 to 5 percent in a noisy minute; the budget is met on the smooth mock and mostly met live. Biggest remaining cost is one software repaint of the whole card per sample; shrinking it needs fewer or cheaper sparklines.
+
+**Snapshots:** `card-wide-*`, `notch-open-wide-*` (calm, hot, meeting, agent), `card-calm-glass`, `card-calm-black`, `notch-open-calm-glass/black`, `card-quickadd`, `notch-closed-narrow-*`. Glass is drawn as a flat gradient in snapshots (no backdrop in ImageRenderer).
+**Shared state warning:** `--keep-card-open`, the hotkey (system-wide, first instance wins) and `~/Library/Preferences/Meridian` are shared by every running copy; measure with other copies stopped.

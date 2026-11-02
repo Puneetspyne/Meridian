@@ -7,7 +7,6 @@ struct CoreBars: View {
     var performance: [Double]
     var height: CGFloat = 26
     var barWidth: CGFloat = 4
-    @Environment(\.meridianReduceMotion) private var reduce
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 6) {
@@ -28,7 +27,6 @@ struct CoreBars: View {
                     Capsule().fill(tint).frame(height: max(barWidth, height * f))
                 }
                 .frame(width: barWidth, height: height)
-                .animation(reduce ? nil : Design.Motion.value, value: f)
             }
         }
     }

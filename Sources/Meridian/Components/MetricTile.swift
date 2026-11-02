@@ -8,6 +8,8 @@ struct MetricTile<Content: View>: View {
     var dot: Color? = nil
     var spoken: String
     @ViewBuilder var content: Content
+    @State private var hover = false
+    @Environment(\.meridianReduceMotion) private var reduce
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -26,7 +28,10 @@ struct MetricTile<Content: View>: View {
         .padding(.bottom, 8)
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, minHeight: Design.Size.tileHeight, maxHeight: .infinity, alignment: .topLeading)
-        .meridianSurface(radius: Design.Radius.tile)
+        .meridianSurface(radius: Design.Radius.tile, lifted: hover)
+        .offset(y: hover ? -1 : 0)
+        .animation(reduce ? nil : Design.Motion.hover, value: hover)
+        .onHover { hover = $0 }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken)
     }

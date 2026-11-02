@@ -12,11 +12,14 @@ struct NotchGeometry: Equatable {
     var centerX: CGFloat
     /// Top edge of the screen in global coordinates (AppKit: y grows upward).
     var topY: CGFloat
+    /// Width of the screen, for clamping the wide card.
+    var screenWidth: CGFloat = 1710
 
     /// The notch on a 14-inch MacBook Air class machine, used when a screen reports a notch but no auxiliary areas.
     static let fallbackWidth: CGFloat = 200
 
-    init(notchWidth: CGFloat, notchHeight: CGFloat, centerX: CGFloat, topY: CGFloat) {
+    init(notchWidth: CGFloat, notchHeight: CGFloat, centerX: CGFloat, topY: CGFloat, screenWidth: CGFloat = 1710) {
+        self.screenWidth = screenWidth
         self.notchWidth = notchWidth
         self.notchHeight = notchHeight
         self.centerX = centerX
@@ -37,6 +40,7 @@ struct NotchGeometry: Equatable {
         }
         notchHeight = inset
         topY = frame.maxY
+        screenWidth = frame.width
     }
 }
 
@@ -45,8 +49,14 @@ struct NotchLayout: Equatable {
     var geometry: NotchGeometry
     var wing: CGFloat
     var cardHeight: CGFloat
-    var panelWidth: CGFloat = Design.NotchMetrics.panelWidth
     var panelHeight: CGFloat
+    var cardLayout: CardLayout = .tall
+    /// Wide enough for the biggest shape (the wide card) on this screen; the panel is mouse-transparent outside the shape.
+    var panelWidth: CGFloat { Self.panelWidth(screenWidth: geometry.screenWidth) }
+    static func panelWidth(screenWidth: CGFloat) -> CGFloat {
+        max(Design.NotchMetrics.panelWidth, min(screenWidth, WideMetrics.maxWidth + 2 * Design.NotchMetrics.openTopRadius + 24))
+    }
+    var cardWidth: CGFloat { CardView.width(layout: cardLayout, screenWidth: geometry.screenWidth, isNotch: true) }
 
     var closedSize: CGSize {
         CGSize(width: geometry.notchWidth + 2 * (Design.Size.notchInsetSide + wing),
@@ -58,7 +68,7 @@ struct NotchLayout: Equatable {
     }
     /// Outer width includes the concave flares on both sides; the card itself is `cardWidth` wide.
     var openSize: CGSize {
-        CGSize(width: Design.Size.cardWidth + 2 * Design.NotchMetrics.openTopRadius,
+        CGSize(width: cardWidth + 2 * Design.NotchMetrics.openTopRadius,
                height: min(cardHeight, maxCardHeight))
     }
     var maxCardHeight: CGFloat { panelHeight }
