@@ -11,7 +11,28 @@ with a Join button, weather, and your Claude Code sessions.
 
 Free, open source (MIT), no account, no telemetry, builds with the Command Line Tools alone.
 
-> Screenshots land here once the snapshot renderer runs in CI. See `docs/snapshots/`.
+<p align="center">
+  <img src="docs/images/notch-closed-gallery.png" alt="The closed notch across eight states: calm clock, memory pressure, running hot, low battery, disk almost full, a meeting in one minute, a coding agent waiting" width="720">
+</p>
+
+**Two ways to open it.** A tall card that unfolds from the notch, or a wide bar that sits just below it.
+Switch with the toggle in the band, in Settings → General, or from the menu bar item. Both are glass by
+default, with a matte black option.
+
+<p align="center">
+  <img src="docs/images/notch-open-wide-calm.png" alt="The wide bar: hero ring, CPU, memory, temperature and network tiles, clock and next item" width="900">
+</p>
+<p align="center">
+  <img src="docs/images/notch-open-wide-hot.png" alt="The wide bar when the CPU is running hot: amber ring, 99 degrees, fan at 6800 rpm" width="900">
+</p>
+<p align="center">
+  <img src="docs/images/notch-open-calm-glass.png" alt="The tall card: hero, ten metric tiles with sparklines, weather, world clocks, coding agents, uptime" width="420">
+  &nbsp;&nbsp;
+  <img src="docs/images/notch-open-meeting.png" alt="The tall card with a meeting starting in one minute and a Join button" width="420">
+</p>
+
+These are renders from the built-in snapshot tool (`swift run Meridian --snapshot`), so the glass is drawn
+flat. On screen it is real Liquid Glass on macOS 26 and the ultra-thin material on Sequoia.
 
 ## Why another one
 
@@ -39,12 +60,30 @@ System Settings → Privacy & Security. Building it yourself avoids that.
 ## Using it
 
 - **Notch body**: hover the notch to peek, dwell or click to open the card. Esc or move away to close.
+- **Tall or wide**: the toggle beside the gear switches between the drawer and the low bar; the card remembers it.
 - **Corner body**: a quarter circle in any screen corner. Drag it to another corner, click or hold to open.
   Choose how it rests: full size, shrink until hover, or tuck into a dot that lets clicks through.
 - **Menu bar**: optional item showing an icon, CPU, temperature or the most urgent signal.
 - **Quick add** (⌥⌘T): `25m focus`, `6pm standup`, `every weekday 10am standup`, `sw` for a stopwatch,
   anything else becomes a to-do.
 - **Settings**: Meridian menu → Settings, or ⌘, from the card.
+
+## Built to run all day
+
+Meridian is meant to stay open from the first coffee to the last commit, so it is measured, not hoped,
+to be cheap. Release build on an M2 MacBook Air, measured with `/usr/bin/top` over 20 s windows, live data:
+
+| State | CPU | Memory |
+| --- | --- | --- |
+| Closed (wings and clock) | 1.1 to 1.9 % | 16 MB |
+| Open, tall card, glass | 2.0 to 2.4 % | 36 MB |
+| Open, wide bar, glass | 2.1 to 2.5 % | 28 MB |
+
+Most of the closed cost is the samplers themselves. What keeps it there: sensors are read on tiers (CPU
+and memory every second, GPU and power every 2 s, temperatures and processes every 3 s), the closed wings
+redraw only when their visible value changes, nothing animates once a second, and the card is not in the
+view tree while it is closed. Rolling digits and per-sample ring animation were built, measured at 6 to
+13 % CPU, and removed on purpose. The numbers above are from one machine; `meridianctl watch` shows yours.
 
 ## What it reads, and how
 
